@@ -1,0 +1,4013 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARCH // Vyraďovanie PDF – Prepress Imposition System</title>
+
+  <!-- CDN knižnice: pdf-lib (natívne vektorové vyradenie) a pdf.js (náhľad na Canvas) -->
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <style>
+    /* ==========================================================================
+       ŠVAJČIARSKY PREPRESS / DTP DIZAJN – PALETA:
+       Dusty Olive (#89937C) | Sandy Brown (#FC9E4F) | Gunmetal (#393E41) | Ghost White (#F7F7FF)
+       ========================================================================== */
+    :root {
+      /* Základná paleta používateľa */
+      --palette-olive: #89937C;
+      --palette-sandy: #FC9E4F;
+      --palette-gunmetal: #393E41;
+      --palette-ghost: #F7F7FF;
+
+      /* Povrchy a vrstvy odvodené od Gunmetal (#393E41) */
+      --bg-dark: #282C2E;
+      --bg-panel: #393E41;
+      --bg-card: #43494D;
+      --bg-input: #2D3134;
+      --border: #4D5458;
+      --border-strong: #636B70;
+      --border-focus: #FC9E4F;
+
+      /* Akcenty z palety */
+      --accent-cyan: #FC9E4F;       /* Hlavný akcent: Sandy Brown */
+      --accent-primary: #FC9E4F;
+      --accent-primary-hover: #FDAE6B;
+      --accent-olive: #89937C;      /* Sekundárny akcent: Dusty Olive */
+      --accent-olive-light: #B2BDA5;
+      --accent-magenta: #E65C9C;
+      --accent-yellow: #FC9E4F;
+      --accent-green: #B2BDA5;
+      --accent-red: #FF5A52;
+
+      /* Typografia odvodená od Ghost White (#F7F7FF) */
+      --text-main: #F7F7FF;
+      --text-muted: #C8CCD4;
+      --text-dim: #979DA5;
+
+      --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, Monaco, "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.4;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-dark); }
+    ::-webkit-scrollbar-thumb { background: #52595E; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent-olive); }
+
+    /* --------------------------------------------------------------------------
+       HORNÝ STAVOVÝ RIADOK
+       -------------------------------------------------------------------------- */
+    #appHeader {
+      height: 52px;
+      background-color: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      gap: 12px;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .brand-logo {
+      background: linear-gradient(135deg, var(--palette-sandy), var(--palette-olive));
+      color: #232729;
+      font-weight: 900;
+      font-size: 13px;
+      padding: 4px 8px;
+      border-radius: 3px;
+      letter-spacing: 1px;
+      flex-shrink: 0;
+    }
+    .brand-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+      color: var(--palette-ghost);
+    }
+    .brand-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: nowrap;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(247, 247, 255, 0.05);
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .status-badge.scale-locked {
+      background: rgba(137, 147, 124, 0.22);
+      border-color: rgba(137, 147, 124, 0.65);
+      color: var(--accent-olive-light);
+    }
+    .status-badge.scale-modified {
+      background: rgba(252, 158, 79, 0.16);
+      border-color: rgba(252, 158, 79, 0.6);
+      color: var(--palette-sandy);
+    }
+    .status-badge.warning {
+      background: rgba(255, 90, 82, 0.18);
+      border-color: var(--accent-red);
+      color: #ff9c97;
+      animation: pulseWarning 1.8s infinite;
+    }
+
+    @keyframes pulseWarning {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.65; }
+    }
+
+    .btn-primary {
+      background-color: var(--palette-sandy);
+      color: #232729;
+      border: none;
+      padding: 8px 16px;
+      font-weight: 700;
+      font-size: 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--accent-primary-hover);
+      transform: translateY(-1px);
+    }
+    .btn-primary:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+    }
+
+    /* Používateľská lišta (Google účet) */
+    .auth-user-bar {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding-left: 8px;
+      border-left: 1px solid var(--border);
+    }
+    .auth-user-bar.visible {
+      display: inline-flex;
+    }
+    .auth-user-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      padding: 4px 9px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--palette-ghost);
+      max-width: 190px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .auth-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--palette-olive);
+      flex-shrink: 0;
+    }
+
+    /* --------------------------------------------------------------------------
+       HLAVNÉ ROZLOŽENIE: ĽAVÝ PANEL + NÁHĽAD VPRAVO
+       -------------------------------------------------------------------------- */
+    #mainLayout {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 52px);
+      overflow: hidden;
+    }
+
+    #sidebar {
+      width: 390px;
+      background-color: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .sidebar-section {
+      border-bottom: 1px solid var(--border);
+      padding: 13px 15px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      color: var(--palette-sandy);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .form-group { margin-bottom: 9px; }
+    .form-group:last-child { margin-bottom: 0; }
+    .form-label {
+      display: block;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .input-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .input-grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .input-grid-4 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 5px;
+    }
+
+    input[type="number"],
+    input[type="text"],
+    select {
+      width: 100%;
+      background-color: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    select {
+      font-family: var(--font-sans);
+    }
+    input[type="number"]:focus,
+    input[type="text"]:focus,
+    select:focus {
+      border-color: var(--border-focus);
+    }
+
+    .unit-addon {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      display: block;
+      margin-bottom: 2px;
+    }
+    .unit-inline {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      flex-shrink: 0;
+    }
+
+    /* Segmented Controls */
+    .segmented-control {
+      display: flex;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .segmented-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 5px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 3px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.12s ease;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .segmented-btn:hover { color: var(--text-main); }
+    .segmented-btn.active {
+      background: var(--bg-card);
+      color: var(--palette-sandy);
+      box-shadow: inset 0 0 0 1px rgba(252, 158, 79, 0.45);
+    }
+
+    /* Small Buttons */
+    .btn-group-sm {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .btn-sm {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      white-space: nowrap;
+    }
+    .btn-sm:hover {
+      border-color: var(--palette-sandy);
+      color: var(--palette-sandy);
+    }
+    .btn-olive {
+      background: rgba(137, 147, 124, 0.25);
+      border: 1px solid var(--palette-olive);
+      color: var(--palette-ghost);
+    }
+    .btn-olive:hover {
+      background: var(--palette-olive);
+      color: #232729;
+      border-color: var(--palette-olive);
+    }
+
+    /* Drop Zone */
+    .drop-zone {
+      position: relative;
+      border: 1px dashed var(--palette-olive);
+      border-radius: 4px;
+      padding: 14px 10px;
+      text-align: center;
+      background: rgba(137, 147, 124, 0.08);
+      transition: all 0.18s ease;
+    }
+    .drop-zone.dragover {
+      border-color: var(--palette-sandy);
+      background: rgba(252, 158, 79, 0.14);
+    }
+    .drop-zone-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+    .file-input-label {
+      display: inline-block;
+      background: var(--bg-card);
+      border: 1px solid var(--palette-olive);
+      color: var(--palette-ghost);
+      padding: 6px 14px;
+      border-radius: 3px;
+      font-weight: 600;
+      font-size: 11px;
+      cursor: pointer;
+      position: relative;
+      z-index: 3;
+      transition: all 0.15s ease;
+    }
+    .file-input-label:hover {
+      border-color: var(--palette-sandy);
+      color: var(--palette-sandy);
+    }
+
+    /* Test Samples */
+    .samples-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .btn-sample {
+      background: rgba(247, 247, 255, 0.035);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 4px;
+      font-size: 10px;
+      font-weight: 600;
+      border-radius: 3px;
+      cursor: pointer;
+      text-align: center;
+      line-height: 1.25;
+      transition: all 0.15s ease;
+    }
+    .btn-sample:hover {
+      border-color: var(--palette-sandy);
+      background: rgba(252, 158, 79, 0.12);
+      color: var(--palette-sandy);
+    }
+
+    /* PDF Box Inspector */
+    .box-inspector {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 7px 9px;
+    }
+    .box-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 0;
+      border-bottom: 1px dashed rgba(247, 247, 255, 0.09);
+      font-size: 11px;
+      gap: 6px;
+    }
+    .box-row:last-child { border-bottom: none; }
+    .box-name { font-weight: 600; color: var(--text-muted); width: 68px; }
+    .box-val { font-family: var(--font-mono); color: var(--text-main); flex: 1; text-align: right; }
+    .box-tag {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      font-weight: 700;
+      width: 66px;
+      text-align: center;
+    }
+    .box-tag.explicit { background: rgba(137, 147, 124, 0.28); color: var(--accent-olive-light); }
+    .box-tag.fallback { background: rgba(247, 247, 255, 0.08); color: var(--text-dim); }
+
+    /* Info Strip & Overflow Alert */
+    .info-strip {
+      background: rgba(137, 147, 124, 0.16);
+      border: 1px solid rgba(137, 147, 124, 0.45);
+      border-radius: 3px;
+      padding: 6px 8px;
+      font-size: 11px;
+      color: var(--palette-ghost);
+      font-family: var(--font-mono);
+      margin-bottom: 8px;
+    }
+
+    .overflow-box {
+      background: rgba(255, 90, 82, 0.15);
+      border: 1px solid var(--accent-red);
+      border-radius: 3px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      color: #ffb8b4;
+      font-size: 11px;
+      display: none;
+    }
+    .overflow-box.active { display: block; }
+
+    /* Mode Tabs */
+    .mode-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+      gap: 2px;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 7px 4px;
+      text-align: center;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-weight: 700;
+      font-size: 11px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .mode-tab:hover { color: var(--text-main); }
+    .mode-tab.active {
+      color: var(--palette-sandy);
+      border-bottom-color: var(--palette-sandy);
+    }
+
+    /* Checkboxes */
+    .checkbox-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-main);
+    }
+    .checkbox-label input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--palette-sandy);
+      cursor: pointer;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+    .badge-cyan { background: rgba(252, 158, 79, 0.18); color: var(--palette-sandy); }
+
+    /* --------------------------------------------------------------------------
+       PRAVÝ NÁHĽADOVÝ PRIESTOR (CANVAS)
+       -------------------------------------------------------------------------- */
+    #previewArea {
+      flex: 1;
+      background-color: var(--bg-dark);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+      min-width: 0;
+    }
+
+    #previewToolbar {
+      min-height: 42px;
+      background-color: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 12px;
+      gap: 10px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    #canvasViewport {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background-color: #24282A;
+      background-image: radial-gradient(rgba(247, 247, 255, 0.08) 1px, transparent 1px);
+      background-size: 18px 18px;
+      cursor: grab;
+    }
+    #canvasViewport.grabbing { cursor: grabbing; }
+
+    #sheetCanvas {
+      box-shadow: 0 12px 42px rgba(0, 0, 0, 0.65);
+      display: block;
+      background-color: transparent;
+      flex-shrink: 0;
+    }
+
+    #emptyState {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+      background: var(--bg-dark);
+      z-index: 10;
+      padding: 24px;
+      text-align: center;
+    }
+    #emptyState.hidden { display: none; }
+
+    /* Window drag overlay */
+    #windowDropOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(252, 158, 79, 0.16);
+      border: 3px dashed var(--palette-sandy);
+      z-index: 500;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    #windowDropOverlay.active { display: flex; }
+    .window-drop-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--palette-sandy);
+      padding: 20px 32px;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--palette-sandy);
+    }
+
+    /* Loading Overlay */
+    #loadingOverlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(40, 44, 46, 0.85);
+      backdrop-filter: blur(3px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 60;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    #loadingOverlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(252, 158, 79, 0.25);
+      border-top-color: var(--palette-sandy);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text {
+      margin-top: 10px;
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--palette-ghost);
+    }
+
+    /* --------------------------------------------------------------------------
+       PRIHLASOVACIA BRÁNA (GOOGLE SIGN-IN) A ADMIN PREHĽAD PRIHLÁSENÍ
+       -------------------------------------------------------------------------- */
+    #authGateOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(34, 38, 40, 0.96);
+      backdrop-filter: blur(6px);
+      z-index: 900;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #authGateOverlay.active {
+      display: flex;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 410px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-strong);
+      border-top: 3px solid var(--palette-sandy);
+      border-radius: 6px;
+      padding: 28px 24px;
+      text-align: center;
+      box-shadow: 0 20px 55px rgba(0, 0, 0, 0.55);
+    }
+    .auth-card h2 {
+      color: var(--palette-ghost);
+      font-size: 18px;
+      margin: 14px 0 8px;
+    }
+    .auth-card p {
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+    .btn-google-login {
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: var(--palette-ghost);
+      color: #232729;
+      border: none;
+      border-radius: 4px;
+      padding: 11px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.12s ease, background 0.15s ease;
+    }
+    .btn-google-login:hover {
+      background: #ffffff;
+      transform: translateY(-1px);
+    }
+    .auth-note {
+      margin-top: 14px;
+      font-size: 11px;
+      color: var(--accent-olive-light);
+    }
+    .auth-error-msg {
+      margin-top: 12px;
+      padding: 8px 10px;
+      border-radius: 4px;
+      background: rgba(255, 90, 82, 0.15);
+      border: 1px solid var(--accent-red);
+      color: #ffb8b4;
+      font-size: 11px;
+      display: none;
+    }
+    .auth-error-msg.visible { display: block; }
+
+    /* Admin modal – Prehľad prihlásení */
+    #adminLogModal {
+      position: fixed;
+      inset: 0;
+      background: rgba(25, 28, 30, 0.82);
+      backdrop-filter: blur(4px);
+      z-index: 850;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #adminLogModal.active { display: flex; }
+    .modal-panel {
+      width: 100%;
+      max-width: 720px;
+      max-height: 82vh;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-strong);
+      border-top: 3px solid var(--palette-olive);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 20px 55px rgba(0, 0, 0, 0.6);
+    }
+    .modal-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .modal-header h3 {
+      font-size: 14px;
+      color: var(--palette-ghost);
+    }
+    .modal-body {
+      padding: 14px 16px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .log-table th,
+    .log-table td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .log-table th {
+      color: var(--palette-sandy);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      background: var(--bg-input);
+      position: sticky;
+      top: 0;
+    }
+    .log-table tr:hover td {
+      background: rgba(247, 247, 255, 0.04);
+    }
+
+    /* Toast notifikácia (bez alert()) */
+    .toast-message {
+      position: fixed;
+      bottom: 18px;
+      right: 18px;
+      max-width: 440px;
+      background: var(--bg-card);
+      border: 1px solid var(--palette-sandy);
+      color: var(--palette-ghost);
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-size: 12px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+      z-index: 950;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(10px);
+      transition: all 0.2s ease;
+    }
+    .toast-message.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+    .toast-message.error {
+      border-color: var(--accent-red);
+      background: #472526;
+      color: #ffd0cd;
+    }
+
+    /* Responzívne prispôsobenie pre menšie obrazovky */
+    @media (max-width: 900px) {
+      body { height: auto; overflow: auto; }
+      #mainLayout { flex-direction: column; height: auto; overflow: visible; }
+      #sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); overflow-y: visible; }
+      #previewArea { min-height: 70vh; }
+      .brand-sub { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Celooknový indikátor pretiahnutia PDF súboru -->
+  <div id="windowDropOverlay">
+    <div class="window-drop-box">Pustite PDF súbor pre lokálne načítanie</div>
+  </div>
+
+  <!-- ==========================================================================
+       HORNÝ STAVOVÝ RIADOK
+       ========================================================================== -->
+  <header id="appHeader">
+    <div class="brand">
+      <div class="brand-logo">ARCH</div>
+      <div>
+        <div class="brand-title">ARCH // Vyraďovanie PDF</div>
+        <div class="brand-sub">Lokálne vektorové prepress vyradenie</div>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <div id="scaleBadge" class="status-badge scale-locked">
+        <span>MIERKA:</span>
+        <span id="scaleBadgeVal" class="mono">100.0 % (1:1)</span>
+      </div>
+
+      <div id="overflowBadge" class="status-badge warning" style="display: none;">
+        ⚠ PRESAH HÁRKU
+      </div>
+
+      <button id="btnExportPdf" class="btn-primary" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Exportovať tlačové PDF
+      </button>
+
+      <!-- Používateľská lišta (zobrazí sa po zapnutí Google prihlasovania) -->
+      <div id="authUserBar" class="auth-user-bar">
+        <span class="auth-user-pill" id="authUserName" title="Prihlásený účet">
+          <span class="auth-dot"></span>
+          <span id="authUserText">-</span>
+        </span>
+        <button type="button" id="btnOpenAdminLogs" class="btn-sm btn-olive" style="display: none;">Prehľad prihlásení</button>
+        <button type="button" id="btnLogoutGoogle" class="btn-sm">Odhlásiť</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==========================================================================
+       HLAVNÝ PRIESTOR: ĽAVÝ PANEL + NÁHĽAD VPRAVO
+       ========================================================================== -->
+  <div id="mainLayout">
+
+    <!-- ĽAVÝ OVLÁDACÍ PANEL -->
+    <aside id="sidebar">
+
+      <!-- SEKCIA 1: VSTUPNÝ SÚBOR A TESTOVACIE VZORKY -->
+      <div class="sidebar-section">
+        <div class="section-title">
+          <span>1. Vstupný PDF súbor</span>
+          <span id="filePageCountBadge" class="badge badge-cyan" style="display:none;">0 str.</span>
+        </div>
+
+        <div class="drop-zone" id="dropZone">
+          <!-- Roztiahnutý natívny file input priamo v drop zóne -->
+          <input type="file" id="pdfFileInput" accept="application/pdf,.pdf" style="position: absolute; inset: 0; opacity: 0; cursor: pointer; z-index: 2;">
+          <div class="drop-zone-text" id="dropZoneText">Potiahnite sem PDF súbor (100 % lokálne v prehliadači)</div>
+          <label for="pdfFileInput" class="file-input-label">Vybrať PDF súbor</label>
+        </div>
+
+        <div style="margin-top: 9px; font-size: 11px; color: var(--text-muted); font-weight: 600;">
+          Okamžité testovacie PDF vzorky:
+        </div>
+        <div class="samples-grid">
+          <button type="button" class="btn-sample" id="btnSampleCard">Vizitka<br><span class="mono" style="opacity:0.75;">90×50 (2 str)</span></button>
+          <button type="button" class="btn-sample" id="btnSampleV1">Brožúra V1<br><span class="mono" style="opacity:0.75;">A5 (16 str)</span></button>
+          <button type="button" class="btn-sample" id="btnSampleV4">Kniha V4<br><span class="mono" style="opacity:0.75;">A5 (32 str)</span></button>
+        </div>
+      </div>
+
+      <!-- SEKCIA 2: INŠPEKTOR PDF BOXOV, TRIMBOX OVERRIDE A SPADÁVKA -->
+      <div class="sidebar-section">
+        <div class="section-title">
+          <span>2. Inšpektor boxov &amp; spadávka</span>
+          <span id="sourceRotateBadge" class="badge badge-cyan" style="display:none;">Rot: 0°</span>
+        </div>
+
+        <div class="box-inspector">
+          <div class="box-row">
+            <span class="box-name">MediaBox</span>
+            <span id="boxValMedia" class="box-val">-</span>
+            <span id="boxTagMedia" class="box-tag fallback">-</span>
+          </div>
+          <div class="box-row">
+            <span class="box-name">CropBox</span>
+            <span id="boxValCrop" class="box-val">-</span>
+            <span id="boxTagCrop" class="box-tag fallback">-</span>
+          </div>
+          <div class="box-row">
+            <span class="box-name">BleedBox</span>
+            <span id="boxValBleed" class="box-val">-</span>
+            <span id="boxTagBleed" class="box-tag fallback">-</span>
+          </div>
+          <div class="box-row">
+            <span class="box-name">TrimBox</span>
+            <span id="boxValTrim" class="box-val" style="color:var(--accent-cyan); font-weight:700;">-</span>
+            <span id="boxTagTrim" class="box-tag fallback">-</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 9px;">
+          <label class="form-label" for="trimOverrideMode">Zásah do formátu (čistý rozmer / TrimBox Override):</label>
+          <select id="trimOverrideMode">
+            <option value="trimbox">Z PDF – TrimBox (predvolené)</option>
+            <option value="cropbox">Z PDF – CropBox</option>
+            <option value="mediabox">Z PDF – MediaBox</option>
+            <option value="margins">Orezať z okrajov (mm)</option>
+            <option value="custom">Vlastný čistý formát (Š × V mm)</option>
+          </select>
+        </div>
+
+        <!-- Orezať z okrajov -->
+        <div id="panelCropMargins" style="display: none; margin-top: 6px;">
+          <div class="form-group" style="margin-bottom: 6px;">
+            <label class="checkbox-label" style="font-size: 11px;">
+              <input type="checkbox" id="cropMarginUniform" checked>
+              <span>Jednotný orez zo všetkých strán</span>
+            </label>
+          </div>
+          <div id="panelCropMarginSingle" class="input-row">
+            <span class="unit-inline">Všetky strany:</span>
+            <input type="number" id="cropMarginAll" value="3" step="0.5" min="0">
+            <span class="unit-inline">mm</span>
+          </div>
+          <div id="panelCropMarginQuad" class="input-grid-4" style="display: none;">
+            <div>
+              <span class="unit-addon">Hore</span>
+              <input type="number" id="cropMarginTop" value="3" step="0.5" min="0">
+            </div>
+            <div>
+              <span class="unit-addon">Vpravo</span>
+              <input type="number" id="cropMarginRight" value="3" step="0.5" min="0">
+            </div>
+            <div>
+              <span class="unit-addon">Dole</span>
+              <input type="number" id="cropMarginBottom" value="3" step="0.5" min="0">
+            </div>
+            <div>
+              <span class="unit-addon">Vľavo</span>
+              <input type="number" id="cropMarginLeft" value="3" step="0.5" min="0">
+            </div>
+          </div>
+        </div>
+
+        <!-- Vlastný čistý formát -->
+        <div id="panelCustomTrim" style="display: none; margin-top: 6px;">
+          <div class="input-grid-2">
+            <div>
+              <span class="unit-addon">Čistá šírka (mm)</span>
+              <input type="number" id="customTrimW" value="90" step="0.5" min="5">
+            </div>
+            <div>
+              <span class="unit-addon">Čistá výška (mm)</span>
+              <input type="number" id="customTrimH" value="50" step="0.5" min="5">
+            </div>
+          </div>
+          <div class="input-grid-2" style="margin-top: 6px;">
+            <div>
+              <span class="unit-addon">Posun X (mm)</span>
+              <input type="number" id="customTrimOffsetX" value="0" step="0.5">
+            </div>
+            <div>
+              <span class="unit-addon">Posun Y (mm)</span>
+              <input type="number" id="customTrimOffsetY" value="0" step="0.5">
+            </div>
+          </div>
+        </div>
+
+        <!-- Spadávka (Bleed Clip) -->
+        <div class="form-group" style="margin-top: 10px;">
+          <label class="form-label">Spadávka (Bleed Clip – oreže pôvodné orezky):</label>
+          <div class="segmented-control" id="bleedModeSeg">
+            <button type="button" class="segmented-btn active" data-val="custom">Vlastná spadávka (mm)</button>
+            <button type="button" class="segmented-btn" data-val="pdf">Podľa PDF BleedBox</button>
+          </div>
+          <div id="panelCustomBleed" class="input-row" style="margin-top: 6px;">
+            <input type="number" id="customBleedMm" value="3" step="0.5" min="0">
+            <span class="unit-inline">mm</span>
+            <div class="btn-group-sm">
+              <button type="button" class="btn-sm" data-bleed-quick="0">0</button>
+              <button type="button" class="btn-sm" data-bleed-quick="2">2</button>
+              <button type="button" class="btn-sm" data-bleed-quick="3">3</button>
+              <button type="button" class="btn-sm" data-bleed-quick="5">5</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SEKCIA 3: REŽIM VYRADENIA (N-UP / V1 / V4) -->
+      <div class="sidebar-section">
+        <div class="section-title">3. Režim vyradenia</div>
+
+        <div class="mode-tabs">
+          <button type="button" class="mode-tab active" data-mode="nup">N-UP / Rozrez</button>
+          <button type="button" class="mode-tab" data-mode="v1">Väzba V1</button>
+          <button type="button" class="mode-tab" data-mode="v4">Väzba V4</button>
+        </div>
+
+        <!-- REŽIM A: N-UP / STEP & REPEAT -->
+        <div id="modePanelNup">
+          <div class="form-group">
+            <label class="form-label">Predvoľby rezu (Rozrez / Gutter):</label>
+            <div class="segmented-control" id="nupPresetSeg">
+              <button type="button" class="segmented-btn active" data-preset="cut_marks">Na rozrez + zn.</button>
+              <button type="button" class="segmented-btn" data-preset="double_cut">2× spadávka</button>
+              <button type="button" class="segmented-btn" data-preset="single_cut">1 rez (0 mm)</button>
+            </div>
+          </div>
+
+          <div class="input-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="nupGutterX">Rozrez X (mm)</label>
+              <input type="number" id="nupGutterX" value="12" step="0.5" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="nupGutterY">Rozrez Y (mm)</label>
+              <input type="number" id="nupGutterY" value="12" step="0.5" min="0">
+            </div>
+          </div>
+
+          <div class="info-strip" id="nupGapInfo">
+            Biela medzera medzi spadávkami: 6.0 × 6.0 mm
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="nupMarksMode">Orezové značky v N-up:</label>
+            <select id="nupMarksMode">
+              <option value="each">Okolo každej položky (aj v rozreze)</option>
+              <option value="perimeter">Len po obvode celého bloku</option>
+            </select>
+          </div>
+
+          <div class="input-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="nupFill">Plnenie hárku</label>
+              <select id="nupFill">
+                <option value="step">Step &amp; Repeat (opakovať)</option>
+                <option value="seq">Sekvenčné N-up</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="nupOrientation">Orientácia položky</label>
+              <select id="nupOrientation">
+                <option value="auto">Auto (max. počet)</option>
+                <option value="0">0° (pôvodná)</option>
+                <option value="90">90° (otočená)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Mriežka (Stĺpce × Riadky):</label>
+            <div class="segmented-control" id="nupGridModeSeg">
+              <button type="button" class="segmented-btn active" data-val="auto">Automaticky (max)</button>
+              <button type="button" class="segmented-btn" data-val="manual">Manuálne</button>
+            </div>
+            <div id="panelNupManualGrid" class="input-grid-2" style="display: none; margin-top: 6px;">
+              <div>
+                <span class="unit-addon">Stĺpce</span>
+                <input type="number" id="nupManualCols" value="4" step="1" min="1" max="50">
+              </div>
+              <div>
+                <span class="unit-addon">Riadky</span>
+                <input type="number" id="nupManualRows" value="5" step="1" min="1" max="50">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="nupDuplex">Duplex (Líc + Rub):</label>
+            <select id="nupDuplex">
+              <option value="simplex">Jednostranne (Simplex)</option>
+              <option value="duplex_long" selected>Obojstranne – Dlhá hrana (zrkadlenie X)</option>
+              <option value="duplex_short">Obojstranne – Krátka hrana (zrkadlenie Y + 180°)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- REŽIM B: VÄZBA V1 (SEDLOVÁ) -->
+        <div id="modePanelV1" style="display: none;">
+          <div class="info-strip" id="v1InfoSummary">
+            V1 Sedlová väzba: automatické doplnenie na násobok 4.
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="v1Creep">Kompenzácia vytláčania chrbta – Creep (mm):</label>
+            <input type="number" id="v1Creep" value="0" step="0.1" min="0" max="20">
+            <span class="unit-addon" style="margin-top:3px;">Vnútorná spadávka v chrbte je vždy orezaná na 0 mm (bez pretečenia cez os).</span>
+          </div>
+        </div>
+
+        <!-- REŽIM C: VÄZBA V4 (ZLOŽKY) -->
+        <div id="modePanelV4" style="display: none;">
+          <div class="info-strip" id="v4InfoSummary">
+            V4 Viac zložiek: 2-up na hárky so signatúrnymi značkami.
+          </div>
+
+          <div class="input-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="v4SigSize">Rozsah zložky</label>
+              <select id="v4SigSize">
+                <option value="8">8 strán</option>
+                <option value="12">12 strán</option>
+                <option value="16" selected>16 strán</option>
+                <option value="20">20 strán</option>
+                <option value="24">24 strán</option>
+                <option value="32">32 strán</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="v4Creep">Creep v zložke (mm)</label>
+              <input type="number" id="v4Creep" value="0" step="0.1" min="0" max="15">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="v4IncompleteMode">Neúplná posledná zložka:</label>
+            <select id="v4IncompleteMode">
+              <option value="pad">Doplniť prázdnymi do plnej zložky</option>
+              <option value="shorten">Skrátiť na násobok 4</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="v4CollationMarks" checked>
+              <span>Signatúrne značky na chrbte (schodíky)</span>
+            </label>
+          </div>
+
+          <div class="input-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="v4CollationHeight">Výška schodíka (mm)</label>
+              <input type="number" id="v4CollationHeight" value="5" step="0.5" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="v4CollationThick">Hrúbka schodíka (mm)</label>
+              <input type="number" id="v4CollationThick" value="1.5" step="0.1" min="0.4">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SEKCIA 4: MIERKA GRAFIKY (ZAMKNUTÁ 100 % = 1:1) -->
+      <div class="sidebar-section">
+        <div class="section-title">4. Mierka grafiky (100 % = 1:1)</div>
+
+        <div class="form-group">
+          <label class="form-label" for="scaleModeSelect">Režim mierky (nikdy nezmenšuje automaticky):</label>
+          <select id="scaleModeSelect">
+            <option value="100" selected>100.0 % (1:1) – Zamknuté (predvolené)</option>
+            <option value="fit">Prispôsobiť hárku (Fit – len na výslovnú voľbu)</option>
+            <option value="custom">Vlastná mierka (%)</option>
+          </select>
+        </div>
+
+        <div id="panelCustomScale" style="display: none;" class="input-row">
+          <span class="unit-inline">Mierka:</span>
+          <input type="number" id="customScaleVal" value="100" step="0.5" min="5" max="400">
+          <span class="unit-inline">%</span>
+        </div>
+
+        <div id="overflowAlertBox" class="overflow-box">
+          <strong>⚠ PRESAH OBSAHU MIMO TLAČOVÚ PLOCHU!</strong>
+          <div id="overflowAlertText" class="mono" style="margin-top: 4px; font-size: 10px;"></div>
+        </div>
+      </div>
+
+      <!-- SEKCIA 5: TLAČOVÝ HÁROK -->
+      <div class="sidebar-section">
+        <div class="section-title">5. Tlačový hárok</div>
+
+        <div class="form-group">
+          <label class="form-label" for="sheetPreset">Preset formátu hárku:</label>
+          <select id="sheetPreset">
+            <option value="SRA3" selected>SRA3 (450 × 320 mm)</option>
+            <option value="A3">A3 (420 × 297 mm)</option>
+            <option value="A3+">A3+ (483 × 329 mm)</option>
+            <option value="SRA4">SRA4 (320 × 225 mm)</option>
+            <option value="A4">A4 (297 × 210 mm)</option>
+            <option value="B3">B3 (500 × 353 mm)</option>
+            <option value="custom">Vlastný rozmer</option>
+          </select>
+        </div>
+
+        <div class="input-grid-2">
+          <div class="form-group">
+            <label class="form-label" for="sheetW">Šírka (mm)</label>
+            <input type="number" id="sheetW" value="450" step="1" min="50">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sheetH">Výška (mm)</label>
+            <input type="number" id="sheetH" value="320" step="1" min="50">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <button type="button" class="btn-sm" id="btnSwapSheetDim" style="width: 100%;">⇄ Otočiť orientáciu hárku (Š ↔ V)</button>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sheetMargin">Nepotlačiteľný okraj hárku (mm):</label>
+          <input type="number" id="sheetMargin" value="5" step="0.5" min="0">
+        </div>
+      </div>
+
+      <!-- SEKCIA 6: TLAČOVÉ ZNAČKY A POPISOK (SLUG) -->
+      <div class="sidebar-section">
+        <div class="section-title">6. Tlačové značky &amp; popisok</div>
+
+        <div class="input-grid-2" style="margin-bottom: 8px;">
+          <label class="checkbox-label">
+            <input type="checkbox" id="cropMarksToggle" checked>
+            <span>Orezové značky</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="foldMarksToggle" checked>
+            <span>Skladové (V1/V4)</span>
+          </label>
+        </div>
+
+        <div class="input-grid-3">
+          <div class="form-group">
+            <label class="form-label" for="cropMarkLen">Dĺžka (mm)</label>
+            <input type="number" id="cropMarkLen" value="5" step="0.5" min="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cropMarkOffset">Odsad. (mm)</label>
+            <input type="number" id="cropMarkOffset" value="3" step="0.5" min="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cropMarkThick">Hrúbka (pt)</label>
+            <input type="number" id="cropMarkThick" value="0.25" step="0.05" min="0.1" max="2">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="cropMarkAutoOffset" checked>
+            <span>Auto odsadenie ≥ spadávka</span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="markColor">Farba značiek:</label>
+          <select id="markColor">
+            <option value="black">Čistá čierna (C0 M0 Y0 K100)</option>
+            <option value="registration" selected>Sútlačová (C100 M100 Y100 K100)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="showSlugToggle" checked>
+            <span>Popisok hárku / Slug (súbor, hárok, mierka)</span>
+          </label>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- PRAVÝ NÁHĽADOVÝ PRIESTOR -->
+    <main id="previewArea">
+
+      <div id="previewToolbar">
+        <!-- Navigácia hárkov -->
+        <div class="toolbar-group">
+          <button type="button" class="btn-sm" id="btnPrevSheet" title="Predchádzajúci hárok">◀</button>
+          <select id="sheetSelect" style="width: auto; min-width: 145px; font-weight: 700;"></select>
+          <button type="button" class="btn-sm" id="btnNextSheet" title="Nasledujúci hárok">▶</button>
+        </div>
+
+        <!-- Líc / Rub / Líc + Rub vedľa seba -->
+        <div class="toolbar-group">
+          <div class="segmented-control" id="viewSideSeg">
+            <button type="button" class="segmented-btn active" data-side="front">Líc</button>
+            <button type="button" class="segmented-btn" data-side="back">Rub</button>
+            <button type="button" class="segmented-btn" data-side="both">Líc + Rub</button>
+          </div>
+        </div>
+
+        <!-- Prekryvné vrstvy náhľadu (netlačia sa) -->
+        <div class="toolbar-group">
+          <label class="checkbox-label" style="font-size: 11px;">
+            <input type="checkbox" id="layerBoxes" checked> Trim/Bleed
+          </label>
+          <label class="checkbox-label" style="font-size: 11px;">
+            <input type="checkbox" id="layerCells" checked> Deliace čiary
+          </label>
+          <label class="checkbox-label" style="font-size: 11px;">
+            <input type="checkbox" id="layerNums" checked> Čísla str.
+          </label>
+          <label class="checkbox-label" style="font-size: 11px;">
+            <input type="checkbox" id="layerMargin" checked> Okraj
+          </label>
+          <label class="checkbox-label" style="font-size: 11px;">
+            <input type="checkbox" id="layerMarks" checked> Značky
+          </label>
+        </div>
+
+        <!-- Zoom -->
+        <div class="toolbar-group">
+          <button type="button" class="btn-sm" id="btnZoomFit">Prispôsobiť</button>
+          <button type="button" class="btn-sm" id="btnZoom100">100 %</button>
+          <button type="button" class="btn-sm" id="btnZoomOut">−</button>
+          <span id="zoomValText" class="mono" style="font-size: 11px; min-width: 44px; text-align: center;">Fit</span>
+          <button type="button" class="btn-sm" id="btnZoomIn">+</button>
+        </div>
+      </div>
+
+      <div id="canvasViewport">
+        <div id="emptyState">
+          <div style="font-size: 40px; margin-bottom: 10px; opacity: 0.45;">▤</div>
+          <h3 style="color: var(--text-main); font-size: 15px; margin-bottom: 6px;">Žiadne PDF nie je načítané</h3>
+          <p style="font-size: 12px; max-width: 340px; color: var(--text-muted);">
+            Pretiahnite PDF súbor kamkoľvek do okna, vyberte ho v ľavom paneli alebo vygenerujte jednu z testovacích vzoriek (Vizitka, Brožúra V1, Kniha V4).
+          </p>
+        </div>
+
+        <canvas id="sheetCanvas"></canvas>
+      </div>
+
+      <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Spracovávam PDF...</div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Neblokujúca toast notifikácia -->
+  <div id="toastMessage" class="toast-message"></div>
+
+  <!-- Prihlasovacia brána cez Google účet (aktivuje sa v AUTH_CONFIG) -->
+  <div id="authGateOverlay">
+    <div class="auth-card">
+      <div class="brand-logo" style="display: inline-block; padding: 6px 12px; font-size: 14px;">ARCH</div>
+      <h2>ARCH // Vyraďovanie PDF</h2>
+      <p>
+        Pre vstup do prepress aplikácie sa prihláste svojím Google účtom.
+        Všetky PDF súbory sa spracúvajú výhradne lokálne vo vašom prehliadači.
+      </p>
+      <button type="button" id="btnGoogleSignIn" class="btn-google-login">
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        Prihlásiť sa cez Google účet
+      </button>
+      <div id="authErrorMsg" class="auth-error-msg"></div>
+      <div class="auth-note">typtop.sk · Prístup pre študentov a spolupracovníkov</div>
+    </div>
+  </div>
+
+  <!-- Admin modal: Prehľad kto a kedy sa prihlásil -->
+  <div id="adminLogModal">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3>Prehľad prihlásení (kto a kedy)</h3>
+        <div class="toolbar-group">
+          <button type="button" id="btnRefreshLogs" class="btn-sm">Obnoviť</button>
+          <button type="button" id="btnExportLogsCsv" class="btn-sm btn-olive">Export CSV</button>
+          <button type="button" id="btnCloseAdminLogs" class="btn-sm">Zavrieť ✕</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div id="adminLogStatus" style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
+          Načítavam záznamy...
+        </div>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Dátum a čas</th>
+              <th>Meno</th>
+              <th>E-mail</th>
+            </tr>
+          </thead>
+          <tbody id="adminLogTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       JAVASCRIPT – KOMPLETNÉ PREPRESS JADRO (NÁHĽAD + VEKTOROVÝ EXPORT)
+       ========================================================================== -->
+  <script>
+    'use strict';
+
+    // Nastavenie pdf.js workera
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    // Konverzné konštanty (1 palec = 72 pt = 25.4 mm)
+    const PT_PER_MM = 72 / 25.4;
+    const mmToPt = (mm) => mm * PT_PER_MM;
+    const ptToMm = (pt) => pt / PT_PER_MM;
+
+    /**
+     * Prevod textu do bezpečného WinAnsi (ASCII) reťazca pre vstavané fonty pdf-lib.
+     * Zabraňuje chybe "WinAnsi cannot encode" pri slovenských znakoch (č, ť, ď, ň, ľ...).
+     */
+    function toWinAnsiSafe(text) {
+      if (!text) return '';
+      return String(text)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[–—]/g, '-')
+        .replace(/[„“”]/g, '"')
+        .replace(/[‚‘’]/g, "'")
+        .replace(/×/g, 'x')
+        .replace(/[^\x20-\x7E]/g, '?');
+    }
+
+    // Keš vyrenderovaných zdrojových strán z pdf.js (v pamäti)
+    const pdfJsCanvasCache = new Map();
+
+    // Ochrana proti pretekaniu asynchrónnych prekreslení
+    let renderToken = 0;
+
+    // Neblokujúce upozornenie (náhrada za alert)
+    let toastTimer = null;
+    function showToast(msg, isError = false) {
+      const el = document.getElementById('toastMessage');
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.toggle('error', isError);
+      el.classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        el.classList.remove('visible');
+      }, 5000);
+    }
+    window.showToast = showToast;
+    /* --------------------------------------------------------------------------
+       STAV APLIKÁCIE
+       -------------------------------------------------------------------------- */
+    const state = {
+      pdfBytes: null,
+      pdfDoc: null,      // pdf-lib dokument
+      pdfJsDoc: null,    // pdf.js dokument
+      docInfo: {
+        filename: '',
+        pageCount: 0,
+        boxes: []        // Pole { media, crop, bleed, trim, view, rotate, explicitTrim, explicitBleed, explicitCrop }
+      },
+
+      // Sekcia 2: TrimBox Override & Spadávka
+      trimOverrideMode: 'trimbox',
+      cropMarginUniform: true,
+      cropMarginAll: 3,
+      cropMarginTop: 3,
+      cropMarginRight: 3,
+      cropMarginBottom: 3,
+      cropMarginLeft: 3,
+      customTrimW: 90,
+      customTrimH: 50,
+      customTrimOffsetX: 0,
+      customTrimOffsetY: 0,
+      bleedMode: 'custom', // 'custom' | 'pdf'
+      customBleedMm: 3,
+
+      // Sekcia 3: Režim vyradenia
+      mode: 'nup', // 'nup' | 'v1' | 'v4'
+      nupGutterPreset: 'cut_marks',
+      nupGutterX: 12,
+      nupGutterY: 12,
+      nupMarksMode: 'each', // 'each' | 'perimeter'
+      nupFill: 'step',      // 'step' | 'seq'
+      nupOrientation: 'auto', // 'auto' | '0' | '90'
+      nupGridMode: 'auto',  // 'auto' | 'manual'
+      nupManualCols: 4,
+      nupManualRows: 5,
+      nupDuplex: 'duplex_long', // 'simplex' | 'duplex_long' | 'duplex_short'
+
+      // V1
+      v1Creep: 0,
+
+      // V4
+      v4SigSize: 16,
+      v4Creep: 0,
+      v4IncompleteMode: 'pad', // 'pad' | 'shorten'
+      v4CollationMarks: true,
+      v4CollationHeight: 5,
+      v4CollationThick: 1.5,
+
+      // Sekcia 4: Mierka (predvolene zamknutá 100 % = 1:1)
+      scaleMode: '100', // '100' | 'fit' | 'custom'
+      customScaleVal: 100,
+
+      // Sekcia 5: Hárok
+      sheetPreset: 'SRA3',
+      sheetW: 450,
+      sheetH: 320,
+      sheetMargin: 5,
+
+      // Sekcia 6: Tlačové značky
+      cropMarksToggle: true,
+      foldMarksToggle: true,
+      cropMarkLen: 5,
+      cropMarkOffset: 3,
+      cropMarkThick: 0.25,
+      cropMarkAutoOffset: true,
+      markColor: 'registration', // 'black' | 'registration'
+      showSlugToggle: true,
+
+      // Náhľad
+      currentSheetIdx: 0,
+      viewSide: 'front', // 'front' | 'back' | 'both'
+      layerBoxes: true,
+      layerCells: true,
+      layerNums: true,
+      layerMargin: true,
+      layerMarks: true,
+      zoomMode: 'fit',   // 'fit' | 'numeric'
+      zoomLevel: 1.0
+    };
+
+    // Referencie na DOM elementy
+    const elements = {};
+
+    function cacheElements() {
+      const ids = [
+        'scaleBadge', 'scaleBadgeVal', 'overflowBadge', 'btnExportPdf',
+        'filePageCountBadge', 'dropZone', 'pdfFileInput', 'dropZoneText',
+        'btnSampleCard', 'btnSampleV1', 'btnSampleV4',
+        'sourceRotateBadge',
+        'boxValMedia', 'boxTagMedia', 'boxValCrop', 'boxTagCrop',
+        'boxValBleed', 'boxTagBleed', 'boxValTrim', 'boxTagTrim',
+        'trimOverrideMode', 'panelCropMargins', 'cropMarginUniform',
+        'panelCropMarginSingle', 'panelCropMarginQuad', 'cropMarginAll',
+        'cropMarginTop', 'cropMarginRight', 'cropMarginBottom', 'cropMarginLeft',
+        'panelCustomTrim', 'customTrimW', 'customTrimH', 'customTrimOffsetX', 'customTrimOffsetY',
+        'panelCustomBleed', 'customBleedMm',
+        'modePanelNup', 'modePanelV1', 'modePanelV4',
+        'nupGutterX', 'nupGutterY', 'nupGapInfo', 'nupMarksMode',
+        'nupFill', 'nupOrientation', 'panelNupManualGrid', 'nupManualCols', 'nupManualRows', 'nupDuplex',
+        'v1InfoSummary', 'v1Creep',
+        'v4InfoSummary', 'v4SigSize', 'v4Creep', 'v4IncompleteMode',
+        'v4CollationMarks', 'v4CollationHeight', 'v4CollationThick',
+        'scaleModeSelect', 'panelCustomScale', 'customScaleVal',
+        'overflowAlertBox', 'overflowAlertText',
+        'sheetPreset', 'sheetW', 'sheetH', 'btnSwapSheetDim', 'sheetMargin',
+        'cropMarksToggle', 'foldMarksToggle', 'cropMarkLen', 'cropMarkOffset', 'cropMarkThick',
+        'cropMarkAutoOffset', 'markColor', 'showSlugToggle',
+        'btnPrevSheet', 'sheetSelect', 'btnNextSheet',
+        'layerBoxes', 'layerCells', 'layerNums', 'layerMargin', 'layerMarks',
+        'btnZoomFit', 'btnZoom100', 'btnZoomOut', 'zoomValText', 'btnZoomIn',
+        'canvasViewport', 'emptyState', 'sheetCanvas',
+        'loadingOverlay', 'loadingText', 'windowDropOverlay'
+      ];
+      ids.forEach((id) => {
+        elements[id] = document.getElementById(id);
+      });
+    }
+
+    function showLoading(text = 'Spracovávam PDF...') {
+      elements.loadingText.textContent = text;
+      elements.loadingOverlay.classList.add('active');
+    }
+
+    function hideLoading() {
+      elements.loadingOverlay.classList.remove('active');
+    }
+
+    /* --------------------------------------------------------------------------
+       INICIALIZÁCIA APLIKÁCIE
+       -------------------------------------------------------------------------- */
+    function init() {
+      cacheElements();
+      setupFileUpload();
+      setupSampleGenerators();
+      setupUIEventListeners();
+      setupCanvasPanZoom();
+      updateNupGapInfo();
+
+      // Prispôsobenie náhľadu pri zmene veľkosti okna
+      window.addEventListener('resize', () => {
+        if (state.pdfDoc && state.zoomMode === 'fit') {
+          renderCurrentSheet();
+        }
+      });
+    }
+
+    /* --------------------------------------------------------------------------
+       SPOĽAHLIVÉ NAHRÁVANIE SÚBORU (DROP ZÓNA + CELÉ OKNO + INPUT RESET)
+       -------------------------------------------------------------------------- */
+    function setupFileUpload() {
+      const fileInput = elements.pdfFileInput;
+      const dropZone = elements.dropZone;
+      const winOverlay = elements.windowDropOverlay;
+
+      // Reset value pred výberom, aby šiel znova nahrať rovnaký súbor
+      fileInput.addEventListener('click', () => {
+        fileInput.value = '';
+      });
+
+      fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (file) await handleFileObject(file);
+      });
+
+      // Drag & drop priamo na drop zónu
+      ['dragenter', 'dragover'].forEach((ev) => {
+        dropZone.addEventListener(ev, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add('dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach((ev) => {
+        dropZone.addEventListener(ev, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove('dragover');
+        });
+      });
+
+      dropZone.addEventListener('drop', async (e) => {
+        winOverlay.classList.remove('active');
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) await handleFileObject(file);
+      });
+
+      // Drag & drop na celé okno prehliadača
+      let dragDepth = 0;
+      window.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragDepth++;
+        winOverlay.classList.add('active');
+      });
+      window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+      window.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) winOverlay.classList.remove('active');
+      });
+      window.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dragDepth = 0;
+        winOverlay.classList.remove('active');
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) await handleFileObject(file);
+      });
+    }
+
+    async function handleFileObject(file) {
+      if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+        showToast('Prosím vyberte platný PDF súbor (.pdf).', true);
+        return;
+      }
+      try {
+        const buffer = await file.arrayBuffer();
+        await loadPDFArrayBuffer(buffer, file.name);
+      } catch (err) {
+        console.error(err);
+        showToast('Nepodarilo sa prečítať súbor: ' + err.message, true);
+      }
+    }
+
+    /**
+     * Načítanie PDF z ArrayBuffer/Uint8Array do pdf-lib aj pdf.js a inšpekcia boxov.
+     */
+    async function loadPDFArrayBuffer(bufferLike, filename) {
+      showLoading('Načítavam a analyzujem PDF...');
+      try {
+        pdfJsCanvasCache.clear();
+        const uint8 = bufferLike instanceof Uint8Array ? bufferLike : new Uint8Array(bufferLike);
+        state.pdfBytes = uint8.slice(0);
+
+        // Načítanie cez pdf-lib (vektorový zdroj pre export a čítanie PDF boxov)
+        state.pdfDoc = await PDFLib.PDFDocument.load(uint8.slice(0), { ignoreEncryption: true });
+
+        // Načítanie cez pdf.js (živý náhľad na Canvas)
+        state.pdfJsDoc = await pdfjsLib.getDocument({ data: uint8.slice(0) }).promise;
+
+        const pageCount = state.pdfDoc.getPageCount();
+        state.docInfo.filename = filename;
+        state.docInfo.pageCount = pageCount;
+        state.docInfo.boxes = [];
+
+        for (let i = 0; i < pageCount; i++) {
+          const page = state.pdfDoc.getPage(i);
+          const media = page.getMediaBox();
+          const crop = page.getCropBox();
+          const bleed = page.getBleedBox();
+          const trim = page.getTrimBox();
+          const rawAngle = page.getRotation().angle || 0;
+          const rotate = ((rawAngle % 360) + 360) % 360;
+
+          // Zistenie explicitnej definície boxov v slovníku strany
+          const explicitTrim = page.node.has(PDFLib.PDFName.of('TrimBox'));
+          const explicitBleed = page.node.has(PDFLib.PDFName.of('BleedBox'));
+          const explicitCrop = page.node.has(PDFLib.PDFName.of('CropBox'));
+
+          // pdf.js page.view zodpovedá CropBoxu (alebo MediaBoxu ak CropBox chýba)
+          const pdfJsPage = await state.pdfJsDoc.getPage(i + 1);
+          const v = pdfJsPage.view; // [x1, y1, x2, y2]
+
+          state.docInfo.boxes.push({
+            media,
+            crop: crop || media,
+            bleed: bleed || crop || media,
+            trim: trim || crop || media,
+            view: { x: v[0], y: v[1], width: v[2] - v[0], height: v[3] - v[1] },
+            rotate,
+            explicitTrim,
+            explicitBleed,
+            explicitCrop
+          });
+        }
+
+        // Aktualizácia UI hlavičky a drop zóny
+        elements.dropZoneText.textContent = filename;
+        elements.filePageCountBadge.textContent = `${pageCount} str.`;
+        elements.filePageCountBadge.style.display = 'inline-block';
+        elements.btnExportPdf.disabled = false;
+        elements.emptyState.classList.add('hidden');
+
+        state.currentSheetIdx = 0;
+        updateBoxInspectorUI();
+        await renderCurrentSheet();
+        showToast(`Načítané: ${filename} (${pageCount} str.)`);
+      } catch (err) {
+        console.error('Chyba pri načítaní PDF:', err);
+        showToast('Nepodarilo sa načítať PDF súbor: ' + err.message, true);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    /* --------------------------------------------------------------------------
+       INŠPEKTOR PDF BOXOV (STRANA 1)
+       -------------------------------------------------------------------------- */
+    function updateBoxInspectorUI() {
+      if (!state.docInfo.boxes.length) return;
+      const b = state.docInfo.boxes[0];
+
+      const fmt = (box) => `${ptToMm(box.width).toFixed(2)} × ${ptToMm(box.height).toFixed(2)} mm`;
+
+      elements.boxValMedia.textContent = fmt(b.media);
+      elements.boxTagMedia.textContent = 'Definovaný';
+      elements.boxTagMedia.className = 'box-tag explicit';
+
+      elements.boxValCrop.textContent = fmt(b.crop);
+      elements.boxTagCrop.textContent = b.explicitCrop ? 'Definovaný' : 'Fallback';
+      elements.boxTagCrop.className = `box-tag ${b.explicitCrop ? 'explicit' : 'fallback'}`;
+
+      elements.boxValBleed.textContent = fmt(b.bleed);
+      elements.boxTagBleed.textContent = b.explicitBleed ? 'Definovaný' : 'Fallback';
+      elements.boxTagBleed.className = `box-tag ${b.explicitBleed ? 'explicit' : 'fallback'}`;
+
+      elements.boxValTrim.textContent = fmt(b.trim);
+      elements.boxTagTrim.textContent = b.explicitTrim ? 'Definovaný' : 'Fallback';
+      elements.boxTagTrim.className = `box-tag ${b.explicitTrim ? 'explicit' : 'fallback'}`;
+
+      if (b.rotate !== 0) {
+        elements.sourceRotateBadge.textContent = `Natívna rot: ${b.rotate}°`;
+        elements.sourceRotateBadge.style.display = 'inline-block';
+      } else {
+        elements.sourceRotateBadge.style.display = 'none';
+      }
+    }
+
+    /* --------------------------------------------------------------------------
+       GEOMETRIA ZDROJOVEJ STRANY: TRIMBOX, ROTÁCIE (0/90/180/270) A BLEED CLIP
+       -------------------------------------------------------------------------- */
+
+    /**
+     * Vráti efektívny čistý rozmer (TrimBox) v surových PDF súradniciach zdrojovej strany.
+     */
+    function getRawSourceTrimBox(pageIdx) {
+      const b = state.docInfo.boxes[pageIdx];
+      if (!b) return { x: 0, y: 0, width: mmToPt(90), height: mmToPt(50) };
+
+      const mode = state.trimOverrideMode;
+      if (mode === 'trimbox') return { ...b.trim };
+      if (mode === 'cropbox') return { ...b.crop };
+      if (mode === 'mediabox') return { ...b.media };
+
+      if (mode === 'margins') {
+        // Užívateľ zadáva orez v pohľadovej orientácii; premapujeme do surových PDF súradníc
+        const uTop = mmToPt(state.cropMarginUniform ? state.cropMarginAll : state.cropMarginTop);
+        const uRight = mmToPt(state.cropMarginUniform ? state.cropMarginAll : state.cropMarginRight);
+        const uBottom = mmToPt(state.cropMarginUniform ? state.cropMarginAll : state.cropMarginBottom);
+        const uLeft = mmToPt(state.cropMarginUniform ? state.cropMarginAll : state.cropMarginLeft);
+
+        const rawM = mapSheetSidesToRaw(b.rotate, { left: uLeft, right: uRight, bottom: uBottom, top: uTop });
+        return {
+          x: b.media.x + rawM.left,
+          y: b.media.y + rawM.bottom,
+          width: Math.max(5, b.media.width - rawM.left - rawM.right),
+          height: Math.max(5, b.media.height - rawM.bottom - rawM.top)
+        };
+      }
+
+      if (mode === 'custom') {
+        const isSwap = b.rotate === 90 || b.rotate === 270;
+        const twPt = mmToPt(isSwap ? state.customTrimH : state.customTrimW);
+        const thPt = mmToPt(isSwap ? state.customTrimW : state.customTrimH);
+
+        // Posun X/Y zadaný používateľom v pohľadovej orientácii
+        const offX = mmToPt(state.customTrimOffsetX);
+        const offY = mmToPt(state.customTrimOffsetY);
+        let rawOffX = offX, rawOffY = offY;
+        if (b.rotate === 90) { rawOffX = -offY; rawOffY = offX; }
+        else if (b.rotate === 180) { rawOffX = -offX; rawOffY = -offY; }
+        else if (b.rotate === 270) { rawOffX = offY; rawOffY = -offX; }
+
+        const cx = b.media.x + b.media.width / 2 + rawOffX;
+        const cy = b.media.y + b.media.height / 2 + rawOffY;
+        return {
+          x: cx - twPt / 2,
+          y: cy - thPt / 2,
+          width: twPt,
+          height: thPt
+        };
+      }
+
+      return { ...b.trim };
+    }
+
+    /**
+     * Vráti pohľadové rozmery čistého formátu (po započítaní natívnej rotácie /Rotate).
+     */
+    function getVisualTrimSize(pageIdx) {
+      const b = state.docInfo.boxes[pageIdx];
+      const rawTrim = getRawSourceTrimBox(pageIdx);
+      const nativeRot = b ? b.rotate : 0;
+      if (nativeRot === 90 || nativeRot === 270) {
+        return { width: rawTrim.height, height: rawTrim.width, rawTrim, nativeRot };
+      }
+      return { width: rawTrim.width, height: rawTrim.height, rawTrim, nativeRot };
+    }
+
+    /**
+     * Premapuje veľkosti okrajov/spadávky z cieľového hárku (left, right, bottom, top)
+     * do surových PDF súradníc strany pri danej rotácii v smere hodinových ručičiek (rotCW).
+     */
+    function mapSheetSidesToRaw(rotCW, sheetSides) {
+      const r = ((rotCW % 360) + 360) % 360;
+      if (r === 0) {
+        return { left: sheetSides.left, right: sheetSides.right, bottom: sheetSides.bottom, top: sheetSides.top };
+      }
+      if (r === 90) {
+        // 90° CW: raw Left->Top, Top->Right, Right->Bottom, Bottom->Left
+        return { left: sheetSides.top, top: sheetSides.right, right: sheetSides.bottom, bottom: sheetSides.left };
+      }
+      if (r === 180) {
+        return { left: sheetSides.right, right: sheetSides.left, bottom: sheetSides.top, top: sheetSides.bottom };
+      }
+      // 270° CW (90° CCW): raw Left->Bottom, Bottom->Right, Right->Top, Top->Left
+      return { left: sheetSides.bottom, bottom: sheetSides.right, right: sheetSides.top, top: sheetSides.left };
+    }
+
+    /**
+     * Vypočíta presnú orezovú oblasť [left, bottom, right, top] v surových PDF súradniciach
+     * pre danú stranu, jej celkovú rotáciu (totalRotCW) a povolené spadávky v smere hárku (v pt).
+     * Podporuje aj zápornú spadávku (vnútorný orez pre Creep v chrbte!).
+     */
+    function getSourcePageClipBox(pageIdx, totalRotCW, sheetBleedsPt) {
+      const b = state.docInfo.boxes[pageIdx];
+      const trim = getRawSourceTrimBox(pageIdx);
+      const media = b ? b.media : trim;
+
+      // Premapovanie požadovaných spadávok zo smeru hárku do surových súradníc strany
+      const rawReq = mapSheetSidesToRaw(totalRotCW, sheetBleedsPt);
+
+      let bL = rawReq.left;
+      let bR = rawReq.right;
+      let bB = rawReq.bottom;
+      let bT = rawReq.top;
+
+      // Ak je zvolená spadávka podľa PDF BleedBox, obmedzíme kladnú spadávku rozmerom BleedBoxu
+      if (state.bleedMode === 'pdf' && b) {
+        const pdfBL = Math.max(0, trim.x - b.bleed.x);
+        const pdfBB = Math.max(0, trim.y - b.bleed.y);
+        const pdfBR = Math.max(0, (b.bleed.x + b.bleed.width) - (trim.x + trim.width));
+        const pdfBT = Math.max(0, (b.bleed.y + b.bleed.height) - (trim.y + trim.height));
+
+        if (bL > 0) bL = Math.min(bL, pdfBL);
+        if (bR > 0) bR = Math.min(bR, pdfBR);
+        if (bB > 0) bB = Math.min(bB, pdfBB);
+        if (bT > 0) bT = Math.min(bT, pdfBT);
+      }
+
+      // Výsledný výrez orezaný hranicami MediaBoxu (aby sa nikdy nedostalo mimo stranu)
+      const clipLeft = Math.max(media.x, trim.x - bL);
+      const clipBottom = Math.max(media.y, trim.y - bB);
+      const clipRight = Math.min(media.x + media.width, trim.x + trim.width + bR);
+      const clipTop = Math.min(media.y + media.height, trim.y + trim.height + bT);
+
+      const safeRight = Math.max(clipLeft + 1, clipRight);
+      const safeTop = Math.max(clipBottom + 1, clipTop);
+
+      return {
+        left: clipLeft,
+        bottom: clipBottom,
+        right: safeRight,
+        top: safeTop,
+        width: safeRight - clipLeft,
+        height: safeTop - clipBottom,
+        rawTrim: trim,
+        // Presná vzdialenosť TrimBoxu od hrán výrezu (môže byť záporná pri Creep oreze)
+        bL: trim.x - clipLeft,
+        bB: trim.y - clipBottom,
+        bR: safeRight - (trim.x + trim.width),
+        bT: safeTop - (trim.y + trim.height)
+      };
+    }
+
+    /**
+     * Vráti aktuálnu nominálnu spadávku v pt pre výpočet značiek a bielej medzery.
+     */
+    function getEffectiveBleedPt() {
+      if (state.bleedMode === 'pdf' && state.docInfo.boxes.length) {
+        const b = state.docInfo.boxes[0];
+        const trim = getRawSourceTrimBox(0);
+        const dL = Math.max(0, trim.x - b.bleed.x);
+        const dR = Math.max(0, (b.bleed.x + b.bleed.width) - (trim.x + trim.width));
+        const dB = Math.max(0, trim.y - b.bleed.y);
+        const dT = Math.max(0, (b.bleed.y + b.bleed.height) - (trim.y + trim.height));
+        return Math.max(dL, dR, dB, dT);
+      }
+      return mmToPt(Math.max(0, state.customBleedMm));
+    }
+
+    /* --------------------------------------------------------------------------
+       JEDNOTNÉ VÝPOČTOVÉ JADRO: computeImpositionPlan()
+       Používa ho živý náhľad (Canvas) aj vektorový export (pdf-lib).
+       -------------------------------------------------------------------------- */
+    function computeImpositionPlan() {
+      if (!state.docInfo.pageCount) return null;
+
+      const sheetW_pt = mmToPt(state.sheetW);
+      const sheetH_pt = mmToPt(state.sheetH);
+      const margin_pt = mmToPt(state.sheetMargin);
+      const printableW_pt = Math.max(1, sheetW_pt - 2 * margin_pt);
+      const printableH_pt = Math.max(1, sheetH_pt - 2 * margin_pt);
+
+      const plan = {
+        mode: state.mode,
+        sheetW_pt,
+        sheetH_pt,
+        margin_pt,
+        printableW_pt,
+        printableH_pt,
+        sheets: [],
+        effectiveScale: 1.0,
+        overflow: { hasOverflow: false, text: '', diffW_mm: 0, diffH_mm: 0 }
+      };
+
+      if (state.mode === 'nup') {
+        computeNupPlan(plan);
+      } else if (state.mode === 'v1') {
+        computeV1Plan(plan);
+      } else if (state.mode === 'v4') {
+        computeV4Plan(plan);
+      }
+
+      return plan;
+    }
+
+    /**
+     * Pomocná funkcia na overenie presahu bloku mimo tlačovú plochu a mimo hárok.
+     */
+    function evaluateOverflow(plan, minX, minY, maxX, maxY, label) {
+      const overMarginL = Math.max(0, plan.margin_pt - minX);
+      const overMarginR = Math.max(0, maxX - (plan.sheetW_pt - plan.margin_pt));
+      const overMarginB = Math.max(0, plan.margin_pt - minY);
+      const overMarginT = Math.max(0, maxY - (plan.sheetH_pt - plan.margin_pt));
+
+      const overSheetL = Math.max(0, -minX);
+      const overSheetR = Math.max(0, maxX - plan.sheetW_pt);
+      const overSheetB = Math.max(0, -minY);
+      const overSheetT = Math.max(0, maxY - plan.sheetH_pt);
+
+      const maxOverMarginX = Math.max(overMarginL, overMarginR);
+      const maxOverMarginY = Math.max(overMarginB, overMarginT);
+      const totalOverW = overMarginL + overMarginR;
+      const totalOverH = overMarginB + overMarginT;
+
+      if (maxOverMarginX > 0.1 || maxOverMarginY > 0.1) {
+        plan.overflow.hasOverflow = true;
+        plan.overflow.diffW_mm = ptToMm(totalOverW);
+        plan.overflow.diffH_mm = ptToMm(totalOverH);
+
+        const outsideSheet = (overSheetL > 0.1 || overSheetR > 0.1 || overSheetB > 0.1 || overSheetT > 0.1);
+        const scope = outsideSheet ? 'OKRAJ HÁRKU' : 'TLAČOVÚ PLOCHU (OKRAJ)';
+        const parts = [];
+        if (totalOverW > 0.1) parts.push(`Šírka +${ptToMm(totalOverW).toFixed(2)} mm`);
+        if (totalOverH > 0.1) parts.push(`Výška +${ptToMm(totalOverH).toFixed(2)} mm`);
+        plan.overflow.text = `${label} presahuje ${scope} pri mierke ${(plan.effectiveScale * 100).toFixed(1)} %: ${parts.join(', ')}. Grafika nebola automaticky zmenšená.`;
+      }
+    }
+
+    /* --------------------------------------------------------------------------
+       REŽIM A: N-UP / STEP & REPEAT
+       -------------------------------------------------------------------------- */
+    function computeNupPlan(plan) {
+      const pageCount = state.docInfo.pageCount;
+      const refVis = getVisualTrimSize(0);
+      const gutX_pt = mmToPt(Math.max(0, state.nupGutterX));
+      const gutY_pt = mmToPt(Math.max(0, state.nupGutterY));
+      const bleedPt = getEffectiveBleedPt();
+
+      // Určenie užívateľskej rotácie položky (0° alebo 90° CW)
+      let userRotCW = 0;
+      let itemW_pt = refVis.width;
+      let itemH_pt = refVis.height;
+
+      if (state.nupOrientation === '90') {
+        userRotCW = 90;
+        itemW_pt = refVis.height;
+        itemH_pt = refVis.width;
+      } else if (state.nupOrientation === 'auto') {
+        const cols0 = Math.max(0, Math.floor((plan.printableW_pt + gutX_pt + 0.01) / (refVis.width + gutX_pt)));
+        const rows0 = Math.max(0, Math.floor((plan.printableH_pt + gutY_pt + 0.01) / (refVis.height + gutY_pt)));
+        const count0 = cols0 * rows0;
+
+        const cols90 = Math.max(0, Math.floor((plan.printableW_pt + gutX_pt + 0.01) / (refVis.height + gutX_pt)));
+        const rows90 = Math.max(0, Math.floor((plan.printableH_pt + gutY_pt + 0.01) / (refVis.width + gutY_pt)));
+        const count90 = cols90 * rows90;
+
+        if (count90 > count0) {
+          userRotCW = 90;
+          itemW_pt = refVis.height;
+          itemH_pt = refVis.width;
+        }
+      }
+
+      // Výpočet mriežky (Auto vs Manuálne)
+      let cols, rows;
+      if (state.nupGridMode === 'manual') {
+        cols = Math.max(1, parseInt(state.nupManualCols, 10) || 1);
+        rows = Math.max(1, parseInt(state.nupManualRows, 10) || 1);
+      } else {
+        cols = Math.max(1, Math.floor((plan.printableW_pt + gutX_pt + 0.01) / (itemW_pt + gutX_pt)));
+        rows = Math.max(1, Math.floor((plan.printableH_pt + gutY_pt + 0.01) / (itemH_pt + gutY_pt)));
+      }
+
+      const blockW_pt = cols * itemW_pt + (cols - 1) * gutX_pt;
+      const blockH_pt = rows * itemH_pt + (rows - 1) * gutY_pt;
+
+      // Prísne pravidlo mierky: 100 % (1.0) predvolene, nikdy automaticky nezmenšovať!
+      let scale = 1.0;
+      if (state.scaleMode === 'fit') {
+        const sX = plan.printableW_pt / blockW_pt;
+        const sY = plan.printableH_pt / blockH_pt;
+        scale = Math.min(sX, sY, 1.0);
+      } else if (state.scaleMode === 'custom') {
+        scale = Math.max(0.05, (state.customScaleVal || 100) / 100);
+      }
+      plan.effectiveScale = scale;
+
+      const sItemW = itemW_pt * scale;
+      const sItemH = itemH_pt * scale;
+      const sGutX = gutX_pt * scale;
+      const sGutY = gutY_pt * scale;
+      const sBleed = bleedPt * scale;
+
+      const scaledBlockW = cols * sItemW + (cols - 1) * sGutX;
+      const scaledBlockH = rows * sItemH + (rows - 1) * sGutY;
+
+      const startX = (plan.sheetW_pt - scaledBlockW) / 2;
+      const startY = (plan.sheetH_pt - scaledBlockH) / 2;
+
+      // Kontrola presahu (vrátane vonkajšej spadávky)
+      evaluateOverflow(
+        plan,
+        startX - sBleed,
+        startY - sBleed,
+        startX + scaledBlockW + sBleed,
+        startY + scaledBlockH + sBleed,
+        `Mriežka N-UP (${cols}×${rows})`
+      );
+
+      const itemsPerSheet = cols * rows;
+      const isDuplex = state.nupDuplex !== 'simplex';
+
+      let numSheets = 1;
+      if (state.nupFill === 'seq') {
+        const perSheet = isDuplex ? itemsPerSheet * 2 : itemsPerSheet;
+        numSheets = Math.max(1, Math.ceil(pageCount / perSheet));
+      } else {
+        numSheets = isDuplex ? Math.max(1, Math.ceil(pageCount / 2)) : pageCount;
+      }
+
+      const maxInnerBleedX_unscaled = gutX_pt / 2;
+      const maxInnerBleedY_unscaled = gutY_pt / 2;
+
+      for (let s = 0; s < numSheets; s++) {
+        const sheetObj = {
+          sheetNum: s + 1,
+          front: { placements: [], cropMarks: [], foldMarks: [], collationMarks: [], cellLines: [], slugText: '' },
+          back: isDuplex ? { placements: [], cropMarks: [], foldMarks: [], collationMarks: [], cellLines: [], slugText: '' } : null
+        };
+
+        // LÍC (FRONT)
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const pageIdx = state.nupFill === 'seq'
+              ? s * (isDuplex ? itemsPerSheet * 2 : itemsPerSheet) + (r * cols + c)
+              : (isDuplex ? s * 2 : s);
+
+            if (pageIdx < pageCount) {
+              const posX = startX + c * (sItemW + sGutX);
+              const posY = startY + (rows - 1 - r) * (sItemH + sGutY);
+
+              // Spadávka na vonkajších hranách plná, v rozreze maximálne polovica rozrezu (pri 0 mm rozreze = 0 mm!)
+              const sheetBleedsPt = {
+                left: c === 0 ? bleedPt : Math.min(bleedPt, maxInnerBleedX_unscaled),
+                right: c === cols - 1 ? bleedPt : Math.min(bleedPt, maxInnerBleedX_unscaled),
+                top: r === 0 ? bleedPt : Math.min(bleedPt, maxInnerBleedY_unscaled),
+                bottom: r === rows - 1 ? bleedPt : Math.min(bleedPt, maxInnerBleedY_unscaled)
+              };
+
+              const nativeRot = state.docInfo.boxes[pageIdx]?.rotate || 0;
+              const totalRotCW = (nativeRot + userRotCW) % 360;
+              const srcClipBox = getSourcePageClipBox(pageIdx, totalRotCW, sheetBleedsPt);
+
+              sheetObj.front.placements.push({
+                pageIndex: pageIdx,
+                trimRect: { x: posX, y: posY, w: sItemW, h: sItemH },
+                totalRotCW,
+                scale,
+                srcClipBox
+              });
+            }
+          }
+        }
+
+        // RUB (BACK) – s presným duplex zrkadlením stĺpcov/riadkov
+        if (isDuplex) {
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const pageIdx = state.nupFill === 'seq'
+                ? s * (itemsPerSheet * 2) + itemsPerSheet + (r * cols + c)
+                : s * 2 + 1;
+
+              let backCol = c;
+              let backRow = r;
+              let extraRot = 0;
+
+              if (state.nupDuplex === 'duplex_long') {
+                // Obrátenie pozdĺž dlhej/vertikálnej osi -> zrkadlenie stĺpcov X
+                backCol = cols - 1 - c;
+              } else if (state.nupDuplex === 'duplex_short') {
+                // Obrátenie pozdĺž krátkej/horizontálnej osi -> zrkadlenie riadkov Y + otočenie 180°
+                backRow = rows - 1 - r;
+                extraRot = 180;
+              }
+
+              if (pageIdx < pageCount) {
+                const posX = startX + backCol * (sItemW + sGutX);
+                const posY = startY + (rows - 1 - backRow) * (sItemH + sGutY);
+
+                const sheetBleedsPt = {
+                  left: backCol === 0 ? bleedPt : Math.min(bleedPt, maxInnerBleedX_unscaled),
+                  right: backCol === cols - 1 ? bleedPt : Math.min(bleedPt, maxInnerBleedX_unscaled),
+                  top: backRow === 0 ? bleedPt : Math.min(bleedPt, maxInnerBleedY_unscaled),
+                  bottom: backRow === rows - 1 ? bleedPt : Math.min(bleedPt, maxInnerBleedY_unscaled)
+                };
+
+                const nativeRot = state.docInfo.boxes[pageIdx]?.rotate || 0;
+                const totalRotCW = (nativeRot + userRotCW + extraRot) % 360;
+                const srcClipBox = getSourcePageClipBox(pageIdx, totalRotCW, sheetBleedsPt);
+
+                sheetObj.back.placements.push({
+                  pageIndex: pageIdx,
+                  trimRect: { x: posX, y: posY, w: sItemW, h: sItemH },
+                  totalRotCW,
+                  scale,
+                  srcClipBox
+                });
+              }
+            }
+          }
+        }
+
+        // Orezové značky a deliace čiary buniek (pre náhľad)
+        generateNupMarks(sheetObj.front, cols, rows, startX, startY, sItemW, sItemH, sGutX, sGutY, sBleed);
+        if (sheetObj.back) {
+          generateNupMarks(sheetObj.back, cols, rows, startX, startY, sItemW, sItemH, sGutX, sGutY, sBleed);
+        }
+
+        const duplexLbl = state.nupDuplex === 'simplex' ? 'Simplex' : (state.nupDuplex === 'duplex_long' ? 'Duplex-Dlhá' : 'Duplex-Krátka');
+        const modeInfo = `N-UP ${cols}×${rows} | ${duplexLbl} | Mierka ${(scale * 100).toFixed(1)} %`;
+        sheetObj.front.slugText = `${state.docInfo.filename} | Hárok ${s + 1}/${numSheets} [LÍC] | ${modeInfo}`;
+        if (sheetObj.back) {
+          sheetObj.back.slugText = `${state.docInfo.filename} | Hárok ${s + 1}/${numSheets} [RUB] | ${modeInfo}`;
+        }
+
+        plan.sheets.push(sheetObj);
+      }
+    }
+
+    /**
+     * Generovanie orezových značiek pre N-UP:
+     * - Značky zarovnané na TrimBox každej položky začínajú VŽDY mimo spadávky.
+     * - V bielej medzere rozrezu sa orezávajú/spájajú presne na deliacej čiare buniek.
+     */
+    function generateNupMarks(sideObj, cols, rows, startX, startY, itemW, itemH, gutX, gutY, scaledBleedPt) {
+      const gridW = cols * itemW + (cols - 1) * gutX;
+      const gridH = rows * itemH + (rows - 1) * gutY;
+
+      // Deliace čiary buniek (len pre náhľad – cyan)
+      for (let c = 0; c < cols - 1; c++) {
+        const midX = startX + c * (itemW + gutX) + itemW + gutX / 2;
+        sideObj.cellLines.push({ x1: midX, y1: startY - mmToPt(6), x2: midX, y2: startY + gridH + mmToPt(6) });
+      }
+      for (let r = 0; r < rows - 1; r++) {
+        const midY = startY + gridH - r * (itemH + gutY) - itemH - gutY / 2;
+        sideObj.cellLines.push({ x1: startX - mmToPt(6), y1: midY, x2: startX + gridW + mmToPt(6), y2: midY });
+      }
+
+      if (!state.cropMarksToggle) return;
+
+      const markLen = mmToPt(Math.max(1, state.cropMarkLen));
+      let outerOffset = mmToPt(Math.max(0, state.cropMarkOffset));
+      if (state.cropMarkAutoOffset && outerOffset < scaledBleedPt) {
+        outerOffset = scaledBleedPt + mmToPt(0.5);
+      }
+
+      // Unikátne X a Y súradnice TrimBox hrán
+      const xSet = new Set();
+      for (let c = 0; c < cols; c++) {
+        const xL = startX + c * (itemW + gutX);
+        xSet.add(Number(xL.toFixed(4)));
+        xSet.add(Number((xL + itemW).toFixed(4)));
+      }
+      const ySet = new Set();
+      for (let r = 0; r < rows; r++) {
+        const yT = startY + gridH - r * (itemH + gutY);
+        ySet.add(Number(yT.toFixed(4)));
+        ySet.add(Number((yT - itemH).toFixed(4)));
+      }
+
+      const xLines = Array.from(xSet);
+      const yLines = Array.from(ySet);
+
+      // Vonkajšie vertikálne značky (hore a dole po obvode bloku)
+      xLines.forEach((x) => {
+        sideObj.cropMarks.push({ x1: x, y1: startY + gridH + outerOffset, x2: x, y2: startY + gridH + outerOffset + markLen });
+        sideObj.cropMarks.push({ x1: x, y1: startY - outerOffset, x2: x, y2: startY - outerOffset - markLen });
+      });
+
+      // Vonkajšie horizontálne značky (vľavo a vpravo po obvode bloku)
+      yLines.forEach((y) => {
+        sideObj.cropMarks.push({ x1: startX - outerOffset, y1: y, x2: startX - outerOffset - markLen, y2: y });
+        sideObj.cropMarks.push({ x1: startX + gridW + outerOffset, y1: y, x2: startX + gridW + outerOffset + markLen, y2: y });
+      });
+
+      // Vnútorné značky v bielej medzere rozrezu (len pri voľbe "Okolo každej položky")
+      if (state.nupMarksMode === 'each') {
+        const whiteGapY = gutY - 2 * scaledBleedPt;
+        const whiteGapX = gutX - 2 * scaledBleedPt;
+
+        // Vertikálne značky v horizontálnom rozreze medzi riadkami
+        if (whiteGapY > 0.5) {
+          // Bezpečný odstup od hrany spadávky (max štvrtina bielej medzery alebo 0.5 mm)
+          const clearPadY = Math.min(mmToPt(0.5), whiteGapY * 0.2);
+          const halfWhiteY = whiteGapY / 2 - clearPadY;
+          const tickLenY = Math.min(markLen, halfWhiteY);
+
+          if (tickLenY > 0.25) {
+            xLines.forEach((x) => {
+              for (let r = 0; r < rows - 1; r++) {
+                const topTrimBottom = startY + gridH - r * (itemH + gutY) - itemH;
+                const botTrimTop = topTrimBottom - gutY;
+                const midY = (topTrimBottom + botTrimTop) / 2;
+
+                // Ryska od spodnej spadávky hornej karty smerom k deliacej čiare midY
+                const yStartTop = topTrimBottom - scaledBleedPt - clearPadY;
+                const yEndTop = Math.max(midY, yStartTop - tickLenY);
+                sideObj.cropMarks.push({ x1: x, y1: yStartTop, x2: x, y2: yEndTop });
+
+                // Ryska od hornej spadávky dolnej karty smerom k deliacej čiare midY
+                const yStartBot = botTrimTop + scaledBleedPt + clearPadY;
+                const yEndBot = Math.min(midY, yStartBot + tickLenY);
+                sideObj.cropMarks.push({ x1: x, y1: yStartBot, x2: x, y2: yEndBot });
+              }
+            });
+          }
+        }
+
+        // Horizontálne značky vo vertikálnom rozreze medzi stĺpcami
+        if (whiteGapX > 0.5) {
+          const clearPadX = Math.min(mmToPt(0.5), whiteGapX * 0.2);
+          const halfWhiteX = whiteGapX / 2 - clearPadX;
+          const tickLenX = Math.min(markLen, halfWhiteX);
+
+          if (tickLenX > 0.25) {
+            yLines.forEach((y) => {
+              for (let c = 0; c < cols - 1; c++) {
+                const leftTrimRight = startX + c * (itemW + gutX) + itemW;
+                const rightTrimLeft = leftTrimRight + gutX;
+                const midX = (leftTrimRight + rightTrimLeft) / 2;
+
+                // Ryska od pravej spadávky ľavej karty k deliacej čiare midX
+                const xStartL = leftTrimRight + scaledBleedPt + clearPadX;
+                const xEndL = Math.min(midX, xStartL + tickLenX);
+                sideObj.cropMarks.push({ x1: xStartL, y1: y, x2: xEndL, y2: y });
+
+                // Ryska od ľavej spadávky pravej karty k deliacej čiare midX
+                const xStartR = rightTrimLeft - scaledBleedPt - clearPadX;
+                const xEndR = Math.max(midX, xStartR - tickLenX);
+                sideObj.cropMarks.push({ x1: xStartR, y1: y, x2: xEndR, y2: y });
+              }
+            });
+          }
+        }
+      }
+    }
+
+    /* --------------------------------------------------------------------------
+       REŽIM B: VÄZBA V1 (SEDLOVÁ / ŠITÁ NA STRIEŠKU, 2-UP)
+       -------------------------------------------------------------------------- */
+    function computeV1Plan(plan) {
+      const pageCount = state.docInfo.pageCount;
+      const paddedCount = Math.ceil(pageCount / 4) * 4;
+      const addedBlanks = paddedCount - pageCount;
+      const numSheets = Math.max(1, paddedCount / 4);
+
+      elements.v1InfoSummary.textContent =
+        `V1 Sedlová: ${pageCount} str. + ${addedBlanks} prázdnych = ${paddedCount} str. (${numSheets} hárkov).`;
+
+      const refVis = getVisualTrimSize(0);
+      const singleW_pt = refVis.width;
+      const singleH_pt = refVis.height;
+      const spreadW_pt = singleW_pt * 2;
+      const spreadH_pt = singleH_pt;
+      const bleedPt = getEffectiveBleedPt();
+
+      let scale = 1.0;
+      if (state.scaleMode === 'fit') {
+        scale = Math.min(plan.printableW_pt / spreadW_pt, plan.printableH_pt / spreadH_pt, 1.0);
+      } else if (state.scaleMode === 'custom') {
+        scale = Math.max(0.05, (state.customScaleVal || 100) / 100);
+      }
+      plan.effectiveScale = scale;
+
+      const sSingleW = singleW_pt * scale;
+      const sSingleH = singleH_pt * scale;
+      const sSpreadW = spreadW_pt * scale;
+      const sSpreadH = spreadH_pt * scale;
+      const sBleed = bleedPt * scale;
+
+      const startX = (plan.sheetW_pt - sSpreadW) / 2;
+      const startY = (plan.sheetH_pt - sSpreadH) / 2;
+      const spineX = plan.sheetW_pt / 2;
+
+      evaluateOverflow(
+        plan,
+        startX - sBleed,
+        startY - sBleed,
+        startX + sSpreadW + sBleed,
+        startY + sSpreadH + sBleed,
+        'Dvojstrana V1'
+      );
+
+      const totalCreepPt = mmToPt(Math.max(0, state.v1Creep));
+
+      for (let s = 0; s < numSheets; s++) {
+        // Creep: vonkajší hárok (s=0) = 0 mm, vnútorný hárok (s=numSheets-1) = plný posun smerom k chrbtu
+        const creepShiftPt = numSheets > 1 ? (totalCreepPt * s) / (numSheets - 1) : 0;
+
+        const sheetObj = {
+          sheetNum: s + 1,
+          front: { placements: [], cropMarks: [], foldMarks: [], collationMarks: [], cellLines: [], slugText: '' },
+          back: { placements: [], cropMarks: [], foldMarks: [], collationMarks: [], cellLines: [], slugText: '' }
+        };
+
+        const frontLeftP = paddedCount - 1 - 2 * s;
+        const frontRightP = 2 * s;
+        const backLeftP = 2 * s + 1;
+        const backRightP = paddedCount - 2 - 2 * s;
+
+        addBookletPlacement(sheetObj.front, frontLeftP, pageCount, spineX, startY, sSingleW, sSingleH, scale, 'left', bleedPt, creepShiftPt);
+        addBookletPlacement(sheetObj.front, frontRightP, pageCount, spineX, startY, sSingleW, sSingleH, scale, 'right', bleedPt, creepShiftPt);
+
+        addBookletPlacement(sheetObj.back, backLeftP, pageCount, spineX, startY, sSingleW, sSingleH, scale, 'left', bleedPt, creepShiftPt);
+        addBookletPlacement(sheetObj.back, backRightP, pageCount, spineX, startY, sSingleW, sSingleH, scale, 'right', bleedPt, creepShiftPt);
+
+        generateBookletMarks(sheetObj.front, startX, startY, sSpreadW, sSpreadH, spineX, sBleed);
+        generateBookletMarks(sheetObj.back, startX, startY, sSpreadW, sSpreadH, spineX, sBleed);
+
+        const pLabel = (p) => (p < pageCount ? `${p + 1}` : 'prázdna');
+        sheetObj.front.slugText = `${state.docInfo.filename} | V1 Hárok ${s + 1}/${numSheets} [LÍC] | Str. ${pLabel(frontLeftP)} / ${pLabel(frontRightP)} | Mierka ${(scale * 100).toFixed(1)} %`;
+        sheetObj.back.slugText = `${state.docInfo.filename} | V1 Hárok ${s + 1}/${numSheets} [RUB] | Str. ${pLabel(backLeftP)} / ${pLabel(backRightP)} | Mierka ${(scale * 100).toFixed(1)} %`;
+
+        plan.sheets.push(sheetObj);
+      }
+    }
+
+    /**
+     * Umiestnenie strany v dvojstrane (V1 / V4):
+     * - Ľavá strana (pageSide === 'left'): vonkajší okraj je VĽAVO (plná spadávka), chrbát je VPRAVO (spadávka VŽDY 0 mm).
+     * - Pravá strana (pageSide === 'right'): chrbát je VĽAVO (spadávka VŽDY 0 mm), vonkajší okraj je VPRAVO (plná spadávka).
+     * - Creep posúva vnútornú dvojstranu k osi chrbta a presne ju oreže na spineX bez pretečenia!
+     */
+    function addBookletPlacement(sideObj, pageIdx, totalPages, spineX, startY, sSingleW, sSingleH, scale, pageSide, bleedPt, creepShiftPt) {
+      // Pozícia TrimBoxu po započítaní posunu Creep smerom k chrbtu
+      const creepScaled = creepShiftPt * scale;
+      const trimX = pageSide === 'left'
+        ? spineX - sSingleW + creepScaled
+        : spineX - creepScaled;
+
+      if (pageIdx >= totalPages) {
+        sideObj.placements.push({
+          pageIndex: null,
+          trimRect: { x: pageSide === 'left' ? spineX - sSingleW : spineX, y: startY, w: sSingleW, h: sSingleH },
+          totalRotCW: 0,
+          scale,
+          srcClipBox: null
+        });
+        return;
+      }
+
+      // Záporná spadávka na strane chrbta (-creepShiftPt) zabezpečí, že obsah sa oreže presne na osi chrbta spineX!
+      const spineBleedUnscaled = -creepShiftPt;
+      const sheetBleedsPt = pageSide === 'left'
+        ? { left: bleedPt, right: spineBleedUnscaled, top: bleedPt, bottom: bleedPt }
+        : { left: spineBleedUnscaled, right: bleedPt, top: bleedPt, bottom: bleedPt };
+
+      const nativeRot = state.docInfo.boxes[pageIdx]?.rotate || 0;
+      const srcClipBox = getSourcePageClipBox(pageIdx, nativeRot, sheetBleedsPt);
+
+      sideObj.placements.push({
+        pageIndex: pageIdx,
+        trimRect: { x: trimX, y: startY, w: sSingleW, h: sSingleH },
+        totalRotCW: nativeRot,
+        scale,
+        srcClipBox
+      });
+    }
+
+    function generateBookletMarks(sideObj, startX, startY, spreadW, spreadH, spineX, scaledBleedPt) {
+      // Deliaca os chrbta (len pre náhľad – cyan)
+      sideObj.cellLines.push({ x1: spineX, y1: startY - mmToPt(8), x2: spineX, y2: startY + spreadH + mmToPt(8) });
+
+      const markLen = mmToPt(Math.max(1, state.cropMarkLen));
+      let offset = mmToPt(Math.max(0, state.cropMarkOffset));
+      if (state.cropMarkAutoOffset && offset < scaledBleedPt) {
+        offset = scaledBleedPt + mmToPt(0.5);
+      }
+
+      if (state.cropMarksToggle) {
+        // 4 vonkajšie rohy dvojstrany
+        // Ľavý horný
+        sideObj.cropMarks.push({ x1: startX, y1: startY + spreadH + offset, x2: startX, y2: startY + spreadH + offset + markLen });
+        sideObj.cropMarks.push({ x1: startX - offset, y1: startY + spreadH, x2: startX - offset - markLen, y2: startY + spreadH });
+        // Ľavý dolný
+        sideObj.cropMarks.push({ x1: startX, y1: startY - offset, x2: startX, y2: startY - offset - markLen });
+        sideObj.cropMarks.push({ x1: startX - offset, y1: startY, x2: startX - offset - markLen, y2: startY });
+        // Pravý horný
+        sideObj.cropMarks.push({ x1: startX + spreadW, y1: startY + spreadH + offset, x2: startX + spreadW, y2: startY + spreadH + offset + markLen });
+        sideObj.cropMarks.push({ x1: startX + spreadW + offset, y1: startY + spreadH, x2: startX + spreadW + offset + markLen, y2: startY + spreadH });
+        // Pravý dolný
+        sideObj.cropMarks.push({ x1: startX + spreadW, y1: startY - offset, x2: startX + spreadW, y2: startY - offset - markLen });
+        sideObj.cropMarks.push({ x1: startX + spreadW + offset, y1: startY, x2: startX + spreadW + offset + markLen, y2: startY });
+      }
+
+      // Skladové (prerušované) značky v osi chrbta
+      if (state.foldMarksToggle) {
+        sideObj.foldMarks.push(
+          { x1: spineX, y1: startY + spreadH + offset, x2: spineX, y2: startY + spreadH + offset + markLen },
+          { x1: spineX, y1: startY - offset, x2: spineX, y2: startY - offset - markLen }
+        );
+      }
+    }
+
+    /* --------------------------------------------------------------------------
+       REŽIM C: VÄZBA V4 (VIAC ZLOŽIEK / ŠITÁ NIŤOU, 2-UP)
+       -------------------------------------------------------------------------- */
+    function computeV4Plan(plan) {
+      const pageCount = state.docInfo.pageCount;
+      const sigSize = parseInt(state.v4SigSize, 10) || 16;
+      const numSigs = Math.max(1, Math.ceil(pageCount / sigSize));
+
+      const refVis = getVisualTrimSize(0);
+      const singleW_pt = refVis.width;
+      const singleH_pt = refVis.height;
+      const spreadW_pt = singleW_pt * 2;
+      const spreadH_pt = singleH_pt;
+      const bleedPt = getEffectiveBleedPt();
+
+      let scale = 1.0;
+      if (state.scaleMode === 'fit') {
+        scale = Math.min(plan.printableW_pt / spreadW_pt, plan.printableH_pt / spreadH_pt, 1.0);
+      } else if (state.scaleMode === 'custom') {
+        scale = Math.max(0.05, (state.customScaleVal || 100) / 100);
+      }
+      plan.effectiveScale = scale;
+
+      const sSingleW = singleW_pt * scale;
+      const sSingleH = singleH_pt * scale;
+      const sSpreadW = spreadW_pt * scale;
+      const sSpreadH = spreadH_pt * scale;
+      const sBleed = bleedPt * scale;
+
+      const startX = (plan.sheetW_pt - sSpreadW) / 2;
+      const startY = (plan.sheetH_pt - sSpreadH) / 2;
+      const spineX = plan.sheetW_pt / 2;
+
+      evaluateOverflow(
+        plan,
+        startX - sBleed,
+        startY - sBleed,
+        startX + sSpreadW + sBleed,
+        startY + sSpreadH + sBleed,
+        'Dvojstrana V4'
+      );
+
+      const sigCreepPt = mmToPt(Math.max(0, state.v4Creep));
+      let globalSheetCounter = 0;
+      let totalAddedBlanks = 0;
+
+      for (let s = 0; s < numSigs; s++) {
+        const sigStartPage = s * sigSize;
+        const actualSigPages = Math.min(sigSize, pageCount - sigStartPage);
+
+        let sigPaddedCount = sigSize;
+        if (state.v4IncompleteMode === 'shorten' && s === numSigs - 1) {
+          sigPaddedCount = Math.max(4, Math.ceil(actualSigPages / 4) * 4);
+        }
+        totalAddedBlanks += Math.max(0, sigPaddedCount - actualSigPages);
+
+        const sigSheetsCount = sigPaddedCount / 4;
+
+        for (let k = 0; k < sigSheetsCount; k++) {
+          globalSheetCounter++;
+          const creepShiftPt = sigSheetsCount > 1 ? (sigCreepPt * k) / (sigSheetsCount - 1) : 0;
+
+          const sheetObj = {
+            sheetNum: globalSheetCounter,
+            sigNum: s + 1,
+            front: { placements: [], cropMarks: [], foldMarks: [], collationMarks: [], cellLines: [], slugText: '' },
+            back: { placements: [], cropMarks: [], foldMarks: [], collationMarks: [], cellLines: [], slugText: '' }
+          };
+
+          const frontLeftP = sigStartPage + sigPaddedCount - 1 - 2 * k;
+          const frontRightP = sigStartPage + 2 * k;
+          const backLeftP = sigStartPage + 2 * k + 1;
+          const backRightP = sigStartPage + sigPaddedCount - 2 - 2 * k;
+
+          addBookletPlacement(sheetObj.front, frontLeftP, pageCount, spineX, startY, sSingleW, sSingleH, scale, 'left', bleedPt, creepShiftPt);
+          addBookletPlacement(sheetObj.front, frontRightP, pageCount, spineX, startY, sSingleW, sSingleH, scale, 'right', bleedPt, creepShiftPt);
+
+          addBookletPlacement(sheetObj.back, backLeftP, pageCount, spineX, startY, sSingleW, sSingleH, scale, 'left', bleedPt, creepShiftPt);
+          addBookletPlacement(sheetObj.back, backRightP, pageCount, spineX, startY, sSingleW, sSingleH, scale, 'right', bleedPt, creepShiftPt);
+
+          generateBookletMarks(sheetObj.front, startX, startY, sSpreadW, sSpreadH, spineX, sBleed);
+          generateBookletMarks(sheetObj.back, startX, startY, sSpreadW, sSpreadH, spineX, sBleed);
+
+          // Signatúrne značky (schodíky / collation marks) na lícnej strane vonkajšieho hárku zložky (k === 0)
+          if (state.v4CollationMarks && k === 0) {
+            const hPt = mmToPt(Math.max(1, state.v4CollationHeight));
+            const thickPt = mmToPt(Math.max(0.4, state.v4CollationThick));
+            const stepGapPt = mmToPt(1.5);
+            const topMarginPt = mmToPt(12);
+            const stepYTop = startY + sSpreadH - topMarginPt - s * (hPt + stepGapPt);
+
+            // Bezpečné ohraničenie v rámci výšky chrbta
+            const clampedY = Math.max(startY + mmToPt(4), stepYTop - hPt);
+            sheetObj.front.collationMarks.push({
+              x: spineX - thickPt / 2,
+              y: clampedY,
+              w: thickPt,
+              h: hPt
+            });
+          }
+
+          sheetObj.front.slugText = `${state.docInfo.filename} | V4 Zložka ${s + 1}/${numSigs} (Hárok ${k + 1}/${sigSheetsCount}) [LÍC] | Mierka ${(scale * 100).toFixed(1)} %`;
+          sheetObj.back.slugText = `${state.docInfo.filename} | V4 Zložka ${s + 1}/${numSigs} (Hárok ${k + 1}/${sigSheetsCount}) [RUB] | Mierka ${(scale * 100).toFixed(1)} %`;
+
+          plan.sheets.push(sheetObj);
+        }
+      }
+
+      elements.v4InfoSummary.textContent =
+        `V4: ${numSigs} zložiek po ${sigSize} str. | ${globalSheetCounter} hárkov | +${totalAddedBlanks} prázdnych strán.`;
+    }
+
+    /* --------------------------------------------------------------------------
+       INTERAKTÍVNY ŽIVÝ NÁHĽAD NA CANVAS (PDF.JS S KEŠOVANÍM + PRESNÝ VÝREZ)
+       -------------------------------------------------------------------------- */
+    async function renderCurrentSheet() {
+      const myToken = ++renderToken;
+      const plan = computeImpositionPlan();
+      if (!plan || !plan.sheets.length) return;
+
+      if (state.currentSheetIdx >= plan.sheets.length) {
+        state.currentSheetIdx = plan.sheets.length - 1;
+      }
+      if (state.currentSheetIdx < 0) state.currentSheetIdx = 0;
+
+      // Aktualizácia zoznamu hárkov
+      elements.sheetSelect.innerHTML = '';
+      plan.sheets.forEach((sh, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.textContent = `Hárok ${sh.sheetNum} / ${plan.sheets.length}${sh.sigNum ? ` (Zložka ${sh.sigNum})` : ''}`;
+        if (idx === state.currentSheetIdx) opt.selected = true;
+        elements.sheetSelect.appendChild(opt);
+      });
+
+      // Aktualizácia indikátora mierky a presahu
+      const pct = (plan.effectiveScale * 100).toFixed(1);
+      const is1to1 = Math.abs(plan.effectiveScale - 1.0) < 0.0005;
+      elements.scaleBadgeVal.textContent = `${pct} %${is1to1 ? ' (1:1)' : ''}`;
+      elements.scaleBadge.className = `status-badge ${is1to1 ? 'scale-locked' : 'scale-modified'}`;
+
+      if (plan.overflow.hasOverflow) {
+        elements.overflowBadge.style.display = 'inline-flex';
+        elements.overflowAlertBox.classList.add('active');
+        elements.overflowAlertText.textContent = plan.overflow.text;
+      } else {
+        elements.overflowBadge.style.display = 'none';
+        elements.overflowAlertBox.classList.remove('active');
+      }
+
+      const sheetData = plan.sheets[state.currentSheetIdx];
+
+      // Určenie strán na vykreslenie (Líc / Rub / Líc + Rub vedľa seba)
+      const sidesToRender = [];
+      if (state.viewSide === 'both') {
+        sidesToRender.push({ label: 'LÍC (FRONT)', data: sheetData.front });
+        if (sheetData.back) {
+          sidesToRender.push({ label: 'RUB (BACK)', data: sheetData.back });
+        }
+      } else if (state.viewSide === 'back') {
+        if (sheetData.back) {
+          sidesToRender.push({ label: 'RUB (BACK)', data: sheetData.back });
+        } else {
+          sidesToRender.push({ label: 'LÍC (Simplex – bez rubu)', data: sheetData.front });
+        }
+      } else {
+        sidesToRender.push({ label: 'LÍC (FRONT)', data: sheetData.front });
+      }
+
+      const gapBetweenSheetsPt = sidesToRender.length > 1 ? mmToPt(18) : 0;
+      const headerStripPt = sidesToRender.length > 1 ? mmToPt(9) : 0;
+      const totalLogicalW = plan.sheetW_pt * sidesToRender.length + gapBetweenSheetsPt * (sidesToRender.length - 1);
+      const totalLogicalH = plan.sheetH_pt + headerStripPt;
+
+      // Výpočet veľkosti zobrazenia (Zoom Fit vs Numerický)
+      const vpW = Math.max(200, elements.canvasViewport.clientWidth - 48);
+      const vpH = Math.max(200, elements.canvasViewport.clientHeight - 48);
+      const fitScale = Math.min(vpW / totalLogicalW, vpH / totalLogicalH);
+
+      let cssPxPerPt;
+      if (state.zoomMode === 'fit') {
+        cssPxPerPt = fitScale;
+        elements.zoomValText.textContent = 'Fit';
+      } else {
+        // 100 % = 1 CSS px na 1 PDF bod * zoomLevel (približne 96/72 = 1.333 pre 1:1 na monitore)
+        cssPxPerPt = (96 / 72) * state.zoomLevel;
+        elements.zoomValText.textContent = `${Math.round(state.zoomLevel * 100)} %`;
+      }
+
+      const cssW = Math.max(100, Math.round(totalLogicalW * cssPxPerPt));
+      const cssH = Math.max(100, Math.round(totalLogicalH * cssPxPerPt));
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const canvas = elements.sheetCanvas;
+
+      // Obmedzenie max rozmeru canvasu proti preťaženiu pamäte prehliadača
+      const maxDim = 4096;
+      const renderScale = Math.min(dpr, maxDim / Math.max(cssW, cssH, 1));
+
+      canvas.width = Math.max(1, Math.round(cssW * renderScale));
+      canvas.height = Math.max(1, Math.round(cssH * renderScale));
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Predrenderovanie potrebných strán z pdf.js
+      const neededPages = new Set();
+      sidesToRender.forEach((s) => {
+        s.data.placements.forEach((p) => {
+          if (p.pageIndex !== null) neededPages.add(p.pageIndex);
+        });
+      });
+
+      const pageCanvasMap = new Map();
+      for (const pIdx of neededPages) {
+        const c = await getRenderedPdfJsPage(pIdx);
+        if (myToken !== renderToken) return; // Zrušiť staršie renderovanie
+        pageCanvasMap.set(pIdx, c);
+      }
+
+      const ptToCanvasPx = (cssPxPerPt * renderScale);
+
+      ctx.save();
+      ctx.scale(ptToCanvasPx, ptToCanvasPx);
+
+      sidesToRender.forEach((sideEntry, idx) => {
+        const offsetX = idx * (plan.sheetW_pt + gapBetweenSheetsPt);
+        const offsetY = headerStripPt;
+
+        if (headerStripPt > 0) {
+          ctx.fillStyle = '#C8CCD4';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'left';
+          ctx.fillText(sideEntry.label, offsetX + 2, headerStripPt - 6);
+        }
+
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        drawSingleSheetOnCanvas(ctx, sideEntry.data, plan, pageCanvasMap);
+        ctx.restore();
+      });
+
+      ctx.restore();
+    }
+
+    /**
+     * Vykreslí jeden tlačový hárok (Líc alebo Rub) do 2D kontextu v PDF bodových rozmeroch.
+     */
+    function drawSingleSheetOnCanvas(ctx, sideObj, plan, pageCanvasMap) {
+      // Biely tlačový hárok
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, plan.sheetW_pt, plan.sheetH_pt);
+
+      // Jemný rám hárku
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 0.75;
+      ctx.strokeRect(0, 0, plan.sheetW_pt, plan.sheetH_pt);
+
+      // Vrstva: Nepotlačiteľný okraj hárku
+      if (state.layerMargin && plan.margin_pt > 0) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 59, 48, 0.45)';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([5, 4]);
+        ctx.strokeRect(plan.margin_pt, plan.margin_pt, plan.printableW_pt, plan.printableH_pt);
+        ctx.restore();
+      }
+
+      // Vykreslenie umiestnených strán (s presným zdrojovým výrezom drawImage!)
+      for (const item of sideObj.placements) {
+        const tx = item.trimRect.x;
+        const ty = item.trimRect.y;
+        const tw = item.trimRect.w;
+        const th = item.trimRect.h;
+        const canvasTrimY = plan.sheetH_pt - ty - th;
+
+        if (item.pageIndex === null) {
+          // Prázdna doplnená strana (V1 / V4)
+          ctx.fillStyle = '#f1f5f9';
+          ctx.fillRect(tx, canvasTrimY, tw, th);
+          ctx.strokeStyle = '#cbd5e1';
+          ctx.lineWidth = 0.75;
+          ctx.strokeRect(tx, canvasTrimY, tw, th);
+          ctx.fillStyle = '#64748b';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('PRÁZDNA STRANA', tx + tw / 2, canvasTrimY + th / 2 + 4);
+          continue;
+        }
+
+        const srcCanvas = pageCanvasMap.get(item.pageIndex);
+        const clip = item.srcClipBox;
+        const boxInfo = state.docInfo.boxes[item.pageIndex];
+
+        if (srcCanvas && clip && boxInfo) {
+          const view = boxInfo.view; // [x, y, width, height] zodpovedajúci pdf.js viewportu s rotation: 0
+
+          // Presný zdrojový výrez (sx, sy, sw, sh) zodpovedajúci [clip.left, clip.bottom, clip.right, clip.top]
+          const sx = ((clip.left - view.x) / view.width) * srcCanvas.width;
+          const sy = ((view.y + view.height - clip.top) / view.height) * srcCanvas.height;
+          const sw = (clip.width / view.width) * srcCanvas.width;
+          const sh = (clip.height / view.height) * srcCanvas.height;
+
+          const s = item.scale;
+          const cw = clip.width * s;
+          const ch = clip.height * s;
+          const rawTw = clip.rawTrim.width * s;
+          const rawTh = clip.rawTrim.height * s;
+          const bL = clip.bL * s;
+          const bT = clip.bT * s;
+          const rot = item.totalRotCW;
+
+          // Exaktná afinná transformácia zhodná s pdf-lib exportom pre 0° / 90° / 180° / 270°
+          ctx.save();
+          if (rot === 0) {
+            const dx = tx - bL;
+            const dy = plan.sheetH_pt - ty - rawTh - bT;
+            ctx.drawImage(srcCanvas, sx, sy, sw, sh, dx, dy, cw, ch);
+          } else if (rot === 90) {
+            const dx = tx + bT + rawTh;
+            const dy = plan.sheetH_pt - ty - (rawTw + bL);
+            ctx.translate(dx, dy);
+            ctx.rotate(Math.PI / 2);
+            ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, cw, ch);
+          } else if (rot === 180) {
+            const dx = tx + bL + rawTw;
+            const dy = plan.sheetH_pt - ty + bT;
+            ctx.translate(dx, dy);
+            ctx.rotate(Math.PI);
+            ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, cw, ch);
+          } else if (rot === 270) {
+            const dx = tx - bT;
+            const dy = plan.sheetH_pt - ty + bL;
+            ctx.translate(dx, dy);
+            ctx.rotate(-Math.PI / 2);
+            ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, cw, ch);
+          }
+          ctx.restore();
+
+          // Vrstva: TrimBox (Sandy Brown) a BleedBox (purpurová)
+          if (state.layerBoxes) {
+            // Výpočet vizuálneho BleedBoxu na hárku z clipu
+            const visBleed = computeVisualClipRectOnSheet(item, plan.sheetH_pt);
+            ctx.save();
+            ctx.strokeStyle = 'rgba(230, 92, 156, 0.65)';
+            ctx.lineWidth = 0.6;
+            ctx.setLineDash([2, 2]);
+            ctx.strokeRect(visBleed.x, visBleed.y, visBleed.w, visBleed.h);
+
+            ctx.strokeStyle = '#FC9E4F';
+            ctx.lineWidth = 0.9;
+            ctx.setLineDash([4, 2]);
+            ctx.strokeRect(tx, canvasTrimY, tw, th);
+            ctx.restore();
+          }
+
+          // Vrstva: Čísla strán
+          if (state.layerNums) {
+            const badgeW = 30;
+            const badgeH = 16;
+            ctx.save();
+            ctx.fillStyle = 'rgba(57, 62, 65, 0.92)';
+            ctx.fillRect(tx + 4, canvasTrimY + 4, badgeW, badgeH);
+            ctx.fillStyle = '#FC9E4F';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`S.${item.pageIndex + 1}`, tx + 4 + badgeW / 2, canvasTrimY + 15);
+            ctx.restore();
+          }
+        }
+      }
+
+      // Vrstva: Deliace čiary buniek (Dusty Olive – len v náhľade)
+      if (state.layerCells && sideObj.cellLines && sideObj.cellLines.length) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(137, 147, 124, 0.85)';
+        ctx.lineWidth = 0.7;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        sideObj.cellLines.forEach((ln) => {
+          ctx.moveTo(ln.x1, plan.sheetH_pt - ln.y1);
+          ctx.lineTo(ln.x2, plan.sheetH_pt - ln.y2);
+        });
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Vrstva: Orezové, skladové, signatúrne značky a popisok hárku
+      if (state.layerMarks) {
+        drawPreviewMarks(ctx, sideObj, plan);
+      }
+    }
+
+    /**
+     * Pomocný výpočet obdĺžnika orezaného BleedBoxu v Canvas súradniciach pre zobrazenie vrstvy.
+     */
+    function computeVisualClipRectOnSheet(item, sheetH_pt) {
+      const s = item.scale;
+      const clip = item.srcClipBox;
+      const rot = item.totalRotCW;
+      let sL, sR, sB, sT;
+      if (rot === 0) {
+        sL = clip.bL * s; sR = clip.bR * s; sB = clip.bB * s; sT = clip.bT * s;
+      } else if (rot === 90) {
+        sL = clip.bB * s; sR = clip.bT * s; sB = clip.bR * s; sT = clip.bL * s;
+      } else if (rot === 180) {
+        sL = clip.bR * s; sR = clip.bL * s; sB = clip.bT * s; sT = clip.bB * s;
+      } else {
+        sL = clip.bT * s; sR = clip.bB * s; sB = clip.bL * s; sT = clip.bR * s;
+      }
+      const x = item.trimRect.x - sL;
+      const yBottomPdf = item.trimRect.y - sB;
+      const w = item.trimRect.w + sL + sR;
+      const h = item.trimRect.h + sB + sT;
+      return { x, y: sheetH_pt - yBottomPdf - h, w, h };
+    }
+
+    /**
+     * Vyrenderuje zdrojovú stranu cez pdf.js BEZ aplikovania natívnej rotácie (rotation: 0),
+     * aby súradnice 100 % zodpovedali surovým PDF boxom a page.view.
+     */
+    async function getRenderedPdfJsPage(pageIdx) {
+      const cacheKey = `${pageIdx}_raw_2.0`;
+      if (pdfJsCanvasCache.has(cacheKey)) {
+        return pdfJsCanvasCache.get(cacheKey);
+      }
+      if (!state.pdfJsDoc) return null;
+
+      try {
+        const page = await state.pdfJsDoc.getPage(pageIdx + 1);
+        const viewport = page.getViewport({ scale: 2.0, rotation: 0 });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.ceil(viewport.width));
+        canvas.height = Math.max(1, Math.ceil(viewport.height));
+        const ctx = canvas.getContext('2d');
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        pdfJsCanvasCache.set(cacheKey, canvas);
+        return canvas;
+      } catch (err) {
+        console.error('Chyba pdf.js renderovania:', err);
+        return null;
+      }
+    }
+
+    function drawPreviewMarks(ctx, sideObj, plan) {
+      const color = state.markColor === 'registration' ? '#000000' : '#18181b';
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = Math.max(0.35, parseFloat(state.cropMarkThick) || 0.25);
+
+      // Orezové značky
+      if (sideObj.cropMarks && sideObj.cropMarks.length) {
+        ctx.beginPath();
+        sideObj.cropMarks.forEach((m) => {
+          ctx.moveTo(m.x1, plan.sheetH_pt - m.y1);
+          ctx.lineTo(m.x2, plan.sheetH_pt - m.y2);
+        });
+        ctx.stroke();
+      }
+
+      // Skladové značky (prerušované)
+      if (sideObj.foldMarks && sideObj.foldMarks.length) {
+        ctx.save();
+        ctx.setLineDash([3.5, 2]);
+        ctx.beginPath();
+        sideObj.foldMarks.forEach((m) => {
+          ctx.moveTo(m.x1, plan.sheetH_pt - m.y1);
+          ctx.lineTo(m.x2, plan.sheetH_pt - m.y2);
+        });
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Signatúrne značky V4 (schodíky)
+      if (sideObj.collationMarks && sideObj.collationMarks.length) {
+        sideObj.collationMarks.forEach((cm) => {
+          ctx.fillRect(cm.x, plan.sheetH_pt - cm.y - cm.h, cm.w, cm.h);
+        });
+      }
+
+      // Popisok hárku (Slug)
+      if (state.showSlugToggle && sideObj.slugText) {
+        ctx.font = '7.5px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(sideObj.slugText, Math.max(8, plan.margin_pt), plan.sheetH_pt - 7);
+      }
+
+      ctx.restore();
+    }
+
+    /* --------------------------------------------------------------------------
+       NATÍVNY VEKTOROVÝ EXPORT CEZ PDF-LIB (Form XObjects – BEZ RASTERIZÁCIE)
+       -------------------------------------------------------------------------- */
+    async function exportImposedPDF() {
+      if (!state.pdfDoc) return;
+      showLoading('Generujem vektorové tlačové PDF...');
+
+      try {
+        const plan = computeImpositionPlan();
+        if (!plan || !plan.sheets.length) return;
+
+        const outDoc = await PDFLib.PDFDocument.create();
+        outDoc.setTitle(toWinAnsiSafe(`${state.docInfo.filename} - Vyradene`));
+        outDoc.setCreator('ARCH // Vyradovanie PDF');
+
+        const markColorObj = state.markColor === 'registration'
+          ? PDFLib.cmyk(1, 1, 1, 1)
+          : PDFLib.cmyk(0, 0, 0, 1);
+
+        for (const sheetData of plan.sheets) {
+          await exportSheetSide(outDoc, sheetData.front, plan, markColorObj);
+          if (sheetData.back) {
+            await exportSheetSide(outDoc, sheetData.back, plan, markColorObj);
+          }
+        }
+
+        const pdfBytes = await outDoc.save();
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        const cleanName = state.docInfo.filename.replace(/\.[^/.]+$/, '');
+        a.download = `${cleanName}_vyradene_${state.mode}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast(`Export hotový: ${a.download}`);
+      } catch (err) {
+        console.error('Chyba pri exporte PDF:', err);
+        showToast('Chyba pri generovaní tlačového PDF: ' + err.message, true);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    async function exportSheetSide(outDoc, sideObj, plan, markColorObj) {
+      const outPage = outDoc.addPage([plan.sheetW_pt, plan.sheetH_pt]);
+      const thickPt = parseFloat(state.cropMarkThick) || 0.25;
+
+      // 1. Vektorové umiestnenie strán cez embedPage() a xScale/yScale (nikdy width/height!)
+      for (const item of sideObj.placements) {
+        if (item.pageIndex === null) continue;
+
+        const srcPage = state.pdfDoc.getPage(item.pageIndex);
+        const clip = item.srcClipBox;
+
+        const emb = await outDoc.embedPage(srcPage, {
+          left: clip.left,
+          bottom: clip.bottom,
+          right: clip.right,
+          top: clip.top
+        });
+
+        const s = item.scale;
+        const tx = item.trimRect.x;
+        const ty = item.trimRect.y;
+        const rawTw = clip.rawTrim.width * s;
+        const rawTh = clip.rawTrim.height * s;
+        const bL = clip.bL * s;
+        const bB = clip.bB * s;
+        const rot = item.totalRotCW;
+
+        // Exaktná poloha originu Form XObjectu pre 0° / 90° / 180° / 270° CW
+        let drawX = tx - bL;
+        let drawY = ty - bB;
+        let pdfLibDegCCW = 0;
+
+        if (rot === 90) {
+          // 90° CW = -90° CCW
+          pdfLibDegCCW = -90;
+          drawX = tx - bB;
+          drawY = ty + bL + rawTw;
+        } else if (rot === 180) {
+          pdfLibDegCCW = 180;
+          drawX = tx + bL + rawTw;
+          drawY = ty + bB + rawTh;
+        } else if (rot === 270) {
+          // 270° CW = +90° CCW
+          pdfLibDegCCW = 90;
+          drawX = tx + bB + rawTh;
+          drawY = ty - bL;
+        }
+
+        outPage.drawPage(emb, {
+          x: drawX,
+          y: drawY,
+          xScale: s,
+          yScale: s,
+          rotate: PDFLib.degrees(pdfLibDegCCW)
+        });
+      }
+
+      // 2. Vektorové orezové značky
+      if (sideObj.cropMarks) {
+        for (const m of sideObj.cropMarks) {
+          outPage.drawLine({
+            start: { x: m.x1, y: m.y1 },
+            end: { x: m.x2, y: m.y2 },
+            thickness: thickPt,
+            color: markColorObj
+          });
+        }
+      }
+
+      // 3. Vektorové skladové značky (prerušované)
+      if (sideObj.foldMarks) {
+        for (const m of sideObj.foldMarks) {
+          outPage.drawLine({
+            start: { x: m.x1, y: m.y1 },
+            end: { x: m.x2, y: m.y2 },
+            thickness: thickPt,
+            color: markColorObj,
+            dashArray: [3.5, 2]
+          });
+        }
+      }
+
+      // 4. Vektorové signatúrne značky V4 (schodíky)
+      if (sideObj.collationMarks) {
+        for (const cm of sideObj.collationMarks) {
+          outPage.drawRectangle({
+            x: cm.x,
+            y: cm.y,
+            width: cm.w,
+            height: cm.h,
+            color: markColorObj
+          });
+        }
+      }
+
+      // 5. Popisok hárku / Slug (WinAnsi bezpečný reťazec)
+      if (state.showSlugToggle && sideObj.slugText) {
+        outPage.drawText(toWinAnsiSafe(sideObj.slugText), {
+          x: Math.max(8, plan.margin_pt),
+          y: 7,
+          size: 7,
+          color: markColorObj
+        });
+      }
+    }
+
+    /* --------------------------------------------------------------------------
+       GENERÁTORY TESTOVACÍCH PDF VZORIEK (PDF-LIB PRIAMO V PREHLIADAČI)
+       -------------------------------------------------------------------------- */
+    function drawFakeOuterCropMarks(page, trimX, trimY, trimW, trimH) {
+      // Falošné červené orezové značky mimo 3 mm spadávky v MediaBoxe na overenie čistého orezu
+      const red = PDFLib.rgb(0.95, 0.1, 0.15);
+      const off = mmToPt(4.5);
+      const len = mmToPt(4);
+      const corners = [
+        { x: trimX, y: trimY, dx: -1, dy: -1 },
+        { x: trimX + trimW, y: trimY, dx: 1, dy: -1 },
+        { x: trimX, y: trimY + trimH, dx: -1, dy: 1 },
+        { x: trimX + trimW, y: trimY + trimH, dx: 1, dy: 1 }
+      ];
+      corners.forEach((c) => {
+        page.drawLine({
+          start: { x: c.x + c.dx * off, y: c.y },
+          end: { x: c.x + c.dx * (off + len), y: c.y },
+          color: red,
+          thickness: 0.75
+        });
+        page.drawLine({
+          start: { x: c.x, y: c.y + c.dy * off },
+          end: { x: c.x, y: c.y + c.dy * (off + len) },
+          color: red,
+          thickness: 0.75
+        });
+      });
+    }
+
+    function setupSampleGenerators() {
+      // 1. Vizitka 90 × 50 mm (2 str. líc/rub so spadávkou 3 mm a falošnými orezkami)
+      elements.btnSampleCard.addEventListener('click', async () => {
+        showLoading('Generujem vzorku Vizitka 90 × 50 mm...');
+        try {
+          const pdfDoc = await PDFLib.PDFDocument.create();
+          const trimW = mmToPt(90);
+          const trimH = mmToPt(50);
+          const bleed = mmToPt(3);
+          const mediaW = mmToPt(110);
+          const mediaH = mmToPt(70);
+          const trimX = (mediaW - trimW) / 2;
+          const trimY = (mediaH - trimH) / 2;
+
+          for (let p = 1; p <= 2; p++) {
+            const page = pdfDoc.addPage([mediaW, mediaH]);
+            page.setMediaBox(0, 0, mediaW, mediaH);
+            page.setCropBox(0, 0, mediaW, mediaH);
+            page.setBleedBox(trimX - bleed, trimY - bleed, trimW + 2 * bleed, trimH + 2 * bleed);
+            page.setTrimBox(trimX, trimY, trimW, trimH);
+
+            // Tmavé pozadie siahajúce do plnej 3 mm spadávky (Gunmetal)
+            page.drawRectangle({
+              x: trimX - bleed,
+              y: trimY - bleed,
+              width: trimW + 2 * bleed,
+              height: trimH + 2 * bleed,
+              color: p === 1 ? PDFLib.rgb(0.224, 0.243, 0.255) : PDFLib.rgb(0.18, 0.20, 0.21)
+            });
+
+            // Farebný akcentový pruh do spadávky (Sandy Brown / Dusty Olive)
+            page.drawRectangle({
+              x: trimX - bleed,
+              y: trimY + trimH - mmToPt(7),
+              width: trimW + 2 * bleed,
+              height: mmToPt(7) + bleed,
+              color: p === 1 ? PDFLib.rgb(0.988, 0.620, 0.310) : PDFLib.rgb(0.537, 0.576, 0.486)
+            });
+
+            page.drawText(toWinAnsiSafe(p === 1 ? 'ARCH PREPRESS STUDIO' : 'WWW.TYPTOP.SK'), {
+              x: trimX + mmToPt(7),
+              y: trimY + mmToPt(28),
+              size: 13,
+              color: PDFLib.rgb(0.969, 0.969, 1.0)
+            });
+            page.drawText(toWinAnsiSafe(p === 1 ? 'Jan Novak - DTP & Vyradovanie' : 'Vizitka 90 x 50 mm | Spadavka 3 mm'), {
+              x: trimX + mmToPt(7),
+              y: trimY + mmToPt(17),
+              size: 8.5,
+              color: PDFLib.rgb(0.84, 0.86, 0.89)
+            });
+            page.drawText(toWinAnsiSafe(p === 1 ? 'LIC (STRANA 1)' : 'RUB (STRANA 2)'), {
+              x: trimX + mmToPt(7),
+              y: trimY + mmToPt(7),
+              size: 7.5,
+              color: PDFLib.rgb(0.988, 0.620, 0.310)
+            });
+
+            drawFakeOuterCropMarks(page, trimX, trimY, trimW, trimH);
+          }
+
+          const bytes = await pdfDoc.save();
+          switchModeTab('nup');
+          await loadPDFArrayBuffer(bytes, 'test_vizitka_90x50.pdf');
+        } catch (err) {
+          console.error(err);
+          showToast('Chyba pri generovaní vzorky Vizitka: ' + err.message, true);
+        } finally {
+          hideLoading();
+        }
+      });
+
+      // 2. Brožúra A5 – 16 strán (V1 so spadávkou 3 mm a falošnými orezkami)
+      elements.btnSampleV1.addEventListener('click', async () => {
+        showLoading('Generujem vzorku Brožúra A5 (16 str.)...');
+        try {
+          const pdfDoc = await PDFLib.PDFDocument.create();
+          const trimW = mmToPt(148);
+          const trimH = mmToPt(210);
+          const bleed = mmToPt(3);
+          const mediaW = mmToPt(168);
+          const mediaH = mmToPt(230);
+          const trimX = (mediaW - trimW) / 2;
+          const trimY = (mediaH - trimH) / 2;
+
+          for (let i = 1; i <= 16; i++) {
+            const page = pdfDoc.addPage([mediaW, mediaH]);
+            page.setMediaBox(0, 0, mediaW, mediaH);
+            page.setCropBox(0, 0, mediaW, mediaH);
+            page.setBleedBox(trimX - bleed, trimY - bleed, trimW + 2 * bleed, trimH + 2 * bleed);
+            page.setTrimBox(trimX, trimY, trimW, trimH);
+
+            // Podklad so spadávkou
+            page.drawRectangle({
+              x: trimX - bleed,
+              y: trimY - bleed,
+              width: trimW + 2 * bleed,
+              height: trimH + 2 * bleed,
+              color: i === 1 || i === 16 ? PDFLib.rgb(0.11, 0.14, 0.2) : PDFLib.rgb(0.97, 0.97, 0.98)
+            });
+
+            // Farebný pruh do spadávky na vonkajšom okraji aj v chrbte (na kontrolu orezu v chrbte!)
+            const isOdd = i % 2 === 1;
+            page.drawRectangle({
+              x: isOdd ? trimX + trimW - mmToPt(5) : trimX - bleed,
+              y: trimY - bleed,
+              width: mmToPt(5) + bleed,
+              height: trimH + 2 * bleed,
+              color: PDFLib.rgb(0, 0.72, 0.85)
+            });
+            // Červený prúžok len v spadávke pri chrbte – vo V1/V4 musí byť čisto odrezaný!
+            page.drawRectangle({
+              x: isOdd ? trimX - bleed : trimX + trimW,
+              y: trimY,
+              width: bleed,
+              height: trimH,
+              color: PDFLib.rgb(0.95, 0.15, 0.2)
+            });
+
+            const txtCol = (i === 1 || i === 16) ? PDFLib.rgb(1, 1, 1) : PDFLib.rgb(0.1, 0.12, 0.16);
+            page.drawText(toWinAnsiSafe(`STRANA ${i}`), {
+              x: trimX + mmToPt(22),
+              y: trimY + trimH - mmToPt(36),
+              size: 28,
+              color: txtCol
+            });
+            page.drawText(toWinAnsiSafe(`Brozura A5 (16 str.) - Test vazby V1`), {
+              x: trimX + mmToPt(22),
+              y: trimY + mmToPt(22),
+              size: 10,
+              color: PDFLib.rgb(0.45, 0.5, 0.58)
+            });
+
+            drawFakeOuterCropMarks(page, trimX, trimY, trimW, trimH);
+          }
+
+          const bytes = await pdfDoc.save();
+          switchModeTab('v1');
+          await loadPDFArrayBuffer(bytes, 'test_brozura_A5_16str.pdf');
+        } catch (err) {
+          console.error(err);
+          showToast('Chyba pri generovaní vzorky Brožúra: ' + err.message, true);
+        } finally {
+          hideLoading();
+        }
+      });
+
+      // 3. Kniha A5 – 32 strán (V4 so spadávkou 3 mm a falošnými orezkami)
+      elements.btnSampleV4.addEventListener('click', async () => {
+        showLoading('Generujem vzorku Kniha A5 (32 str.)...');
+        try {
+          const pdfDoc = await PDFLib.PDFDocument.create();
+          const trimW = mmToPt(148);
+          const trimH = mmToPt(210);
+          const bleed = mmToPt(3);
+          const mediaW = mmToPt(168);
+          const mediaH = mmToPt(230);
+          const trimX = (mediaW - trimW) / 2;
+          const trimY = (mediaH - trimH) / 2;
+
+          for (let i = 1; i <= 32; i++) {
+            const sigNum = Math.ceil(i / 16);
+            const page = pdfDoc.addPage([mediaW, mediaH]);
+            page.setMediaBox(0, 0, mediaW, mediaH);
+            page.setCropBox(0, 0, mediaW, mediaH);
+            page.setBleedBox(trimX - bleed, trimY - bleed, trimW + 2 * bleed, trimH + 2 * bleed);
+            page.setTrimBox(trimX, trimY, trimW, trimH);
+
+            page.drawRectangle({
+              x: trimX - bleed,
+              y: trimY - bleed,
+              width: trimW + 2 * bleed,
+              height: trimH + 2 * bleed,
+              color: sigNum === 1 ? PDFLib.rgb(0.96, 0.96, 0.93) : PDFLib.rgb(0.93, 0.95, 0.98)
+            });
+
+            // Horný pruh do spadávky podľa čísla zložky
+            page.drawRectangle({
+              x: trimX - bleed,
+              y: trimY + trimH - mmToPt(10),
+              width: trimW + 2 * bleed,
+              height: mmToPt(10) + bleed,
+              color: sigNum === 1 ? PDFLib.rgb(0.88, 0, 0.45) : PDFLib.rgb(0, 0.65, 0.8)
+            });
+
+            page.drawText(toWinAnsiSafe(`STRANA ${i}`), {
+              x: trimX + mmToPt(22),
+              y: trimY + trimH - mmToPt(42),
+              size: 26,
+              color: PDFLib.rgb(0.1, 0.12, 0.16)
+            });
+            page.drawText(toWinAnsiSafe(`Zlozka c. ${sigNum} - Kniha A5 (32 str. / V4)`), {
+              x: trimX + mmToPt(22),
+              y: trimY + trimH - mmToPt(56),
+              size: 11,
+              color: sigNum === 1 ? PDFLib.rgb(0.82, 0, 0.4) : PDFLib.rgb(0, 0.5, 0.68)
+            });
+
+            drawFakeOuterCropMarks(page, trimX, trimY, trimW, trimH);
+          }
+
+          const bytes = await pdfDoc.save();
+          switchModeTab('v4');
+          await loadPDFArrayBuffer(bytes, 'test_kniha_A5_32str.pdf');
+        } catch (err) {
+          console.error(err);
+          showToast('Chyba pri generovaní vzorky Kniha: ' + err.message, true);
+        } finally {
+          hideLoading();
+        }
+      });
+    }
+
+    function switchModeTab(mode) {
+      state.mode = mode;
+      document.querySelectorAll('.mode-tab').forEach((t) => {
+        t.classList.toggle('active', t.dataset.mode === mode);
+      });
+      elements.modePanelNup.style.display = mode === 'nup' ? 'block' : 'none';
+      elements.modePanelV1.style.display = mode === 'v1' ? 'block' : 'none';
+      elements.modePanelV4.style.display = mode === 'v4' ? 'block' : 'none';
+      state.currentSheetIdx = 0;
+    }
+
+    /* --------------------------------------------------------------------------
+       OVLÁDACIE PRVKY A SYNCHRONIZÁCIA STAVU
+       -------------------------------------------------------------------------- */
+    function setupUIEventListeners() {
+      elements.btnExportPdf.addEventListener('click', exportImposedPDF);
+
+      // TrimBox Override
+      elements.trimOverrideMode.addEventListener('change', (e) => {
+        state.trimOverrideMode = e.target.value;
+        elements.panelCropMargins.style.display = state.trimOverrideMode === 'margins' ? 'block' : 'none';
+        elements.panelCustomTrim.style.display = state.trimOverrideMode === 'custom' ? 'block' : 'none';
+        renderCurrentSheet();
+      });
+
+      elements.cropMarginUniform.addEventListener('change', (e) => {
+        state.cropMarginUniform = e.target.checked;
+        elements.panelCropMarginSingle.style.display = state.cropMarginUniform ? 'flex' : 'none';
+        elements.panelCropMarginQuad.style.display = state.cropMarginUniform ? 'none' : 'grid';
+        renderCurrentSheet();
+      });
+
+      [
+        'cropMarginAll', 'cropMarginTop', 'cropMarginRight', 'cropMarginBottom', 'cropMarginLeft',
+        'customTrimW', 'customTrimH', 'customTrimOffsetX', 'customTrimOffsetY'
+      ].forEach((id) => {
+        elements[id].addEventListener('input', (e) => {
+          state[id] = parseFloat(e.target.value) || 0;
+          renderCurrentSheet();
+        });
+      });
+
+      // Spadávka
+      setupSegmentedControl('bleedModeSeg', (val) => {
+        state.bleedMode = val;
+        elements.panelCustomBleed.style.display = val === 'custom' ? 'flex' : 'none';
+        updateNupGapInfo();
+        renderCurrentSheet();
+      });
+
+      elements.customBleedMm.addEventListener('input', (e) => {
+        state.customBleedMm = Math.max(0, parseFloat(e.target.value) || 0);
+        updateNupGapInfo();
+        renderCurrentSheet();
+      });
+
+      document.querySelectorAll('[data-bleed-quick]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const v = parseFloat(btn.dataset.bleedQuick);
+          state.customBleedMm = v;
+          elements.customBleedMm.value = v;
+          updateNupGapInfo();
+          renderCurrentSheet();
+        });
+      });
+
+      // Prepínače režimov N-UP / V1 / V4
+      document.querySelectorAll('.mode-tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          switchModeTab(tab.dataset.mode);
+          renderCurrentSheet();
+        });
+      });
+
+      // N-UP predvoľby rezu
+      setupSegmentedControl('nupPresetSeg', (preset) => {
+        state.nupGutterPreset = preset;
+        const b = ptToMm(getEffectiveBleedPt());
+        if (preset === 'cut_marks') {
+          state.nupGutterX = Math.max(10, Number((b * 2 + 6).toFixed(1)));
+          state.nupGutterY = Math.max(10, Number((b * 2 + 6).toFixed(1)));
+          state.nupMarksMode = 'each';
+        } else if (preset === 'double_cut') {
+          state.nupGutterX = Number((b * 2).toFixed(1));
+          state.nupGutterY = Number((b * 2).toFixed(1));
+        } else if (preset === 'single_cut') {
+          state.nupGutterX = 0;
+          state.nupGutterY = 0;
+        }
+        elements.nupGutterX.value = state.nupGutterX;
+        elements.nupGutterY.value = state.nupGutterY;
+        elements.nupMarksMode.value = state.nupMarksMode;
+        updateNupGapInfo();
+        renderCurrentSheet();
+      });
+
+      elements.nupGutterX.addEventListener('input', (e) => {
+        state.nupGutterX = Math.max(0, parseFloat(e.target.value) || 0);
+        updateNupGapInfo();
+        renderCurrentSheet();
+      });
+      elements.nupGutterY.addEventListener('input', (e) => {
+        state.nupGutterY = Math.max(0, parseFloat(e.target.value) || 0);
+        updateNupGapInfo();
+        renderCurrentSheet();
+      });
+
+      setupSegmentedControl('nupGridModeSeg', (val) => {
+        state.nupGridMode = val;
+        elements.panelNupManualGrid.style.display = val === 'manual' ? 'grid' : 'none';
+        renderCurrentSheet();
+      });
+
+      ['nupManualCols', 'nupManualRows'].forEach((id) => {
+        elements[id].addEventListener('input', (e) => {
+          state[id] = Math.max(1, parseInt(e.target.value, 10) || 1);
+          renderCurrentSheet();
+        });
+      });
+
+      ['nupMarksMode', 'nupFill', 'nupOrientation', 'nupDuplex'].forEach((id) => {
+        elements[id].addEventListener('change', (e) => {
+          state[id] = e.target.value;
+          renderCurrentSheet();
+        });
+      });
+
+      // V1 & V4
+      elements.v1Creep.addEventListener('input', (e) => {
+        state.v1Creep = Math.max(0, parseFloat(e.target.value) || 0);
+        renderCurrentSheet();
+      });
+      elements.v4SigSize.addEventListener('change', (e) => {
+        state.v4SigSize = parseInt(e.target.value, 10) || 16;
+        state.currentSheetIdx = 0;
+        renderCurrentSheet();
+      });
+      elements.v4Creep.addEventListener('input', (e) => {
+        state.v4Creep = Math.max(0, parseFloat(e.target.value) || 0);
+        renderCurrentSheet();
+      });
+      elements.v4IncompleteMode.addEventListener('change', (e) => {
+        state.v4IncompleteMode = e.target.value;
+        state.currentSheetIdx = 0;
+        renderCurrentSheet();
+      });
+      elements.v4CollationMarks.addEventListener('change', (e) => {
+        state.v4CollationMarks = e.target.checked;
+        renderCurrentSheet();
+      });
+      elements.v4CollationHeight.addEventListener('input', (e) => {
+        state.v4CollationHeight = Math.max(1, parseFloat(e.target.value) || 5);
+        renderCurrentSheet();
+      });
+      elements.v4CollationThick.addEventListener('input', (e) => {
+        state.v4CollationThick = Math.max(0.4, parseFloat(e.target.value) || 1.5);
+        renderCurrentSheet();
+      });
+
+      // Mierka
+      elements.scaleModeSelect.addEventListener('change', (e) => {
+        state.scaleMode = e.target.value;
+        elements.panelCustomScale.style.display = state.scaleMode === 'custom' ? 'flex' : 'none';
+        renderCurrentSheet();
+      });
+      elements.customScaleVal.addEventListener('input', (e) => {
+        state.customScaleVal = Math.max(5, parseFloat(e.target.value) || 100);
+        renderCurrentSheet();
+      });
+
+      // Hárok
+      const sheetPresets = {
+        SRA3: [450, 320],
+        A3: [420, 297],
+        'A3+': [483, 329],
+        SRA4: [320, 225],
+        A4: [297, 210],
+        B3: [500, 353]
+      };
+      elements.sheetPreset.addEventListener('change', (e) => {
+        state.sheetPreset = e.target.value;
+        if (sheetPresets[state.sheetPreset]) {
+          state.sheetW = sheetPresets[state.sheetPreset][0];
+          state.sheetH = sheetPresets[state.sheetPreset][1];
+          elements.sheetW.value = state.sheetW;
+          elements.sheetH.value = state.sheetH;
+        }
+        renderCurrentSheet();
+      });
+      elements.sheetW.addEventListener('input', (e) => {
+        state.sheetW = Math.max(50, parseFloat(e.target.value) || 450);
+        elements.sheetPreset.value = 'custom';
+        renderCurrentSheet();
+      });
+      elements.sheetH.addEventListener('input', (e) => {
+        state.sheetH = Math.max(50, parseFloat(e.target.value) || 320);
+        elements.sheetPreset.value = 'custom';
+        renderCurrentSheet();
+      });
+      elements.btnSwapSheetDim.addEventListener('click', () => {
+        const tmp = state.sheetW;
+        state.sheetW = state.sheetH;
+        state.sheetH = tmp;
+        elements.sheetW.value = state.sheetW;
+        elements.sheetH.value = state.sheetH;
+        renderCurrentSheet();
+      });
+      elements.sheetMargin.addEventListener('input', (e) => {
+        state.sheetMargin = Math.max(0, parseFloat(e.target.value) || 0);
+        renderCurrentSheet();
+      });
+
+      // Značky a Slug
+      ['cropMarksToggle', 'foldMarksToggle', 'cropMarkAutoOffset', 'showSlugToggle'].forEach((id) => {
+        elements[id].addEventListener('change', (e) => {
+          state[id] = e.target.checked;
+          renderCurrentSheet();
+        });
+      });
+      ['cropMarkLen', 'cropMarkOffset', 'cropMarkThick'].forEach((id) => {
+        elements[id].addEventListener('input', (e) => {
+          state[id] = Math.max(0, parseFloat(e.target.value) || 0);
+          renderCurrentSheet();
+        });
+      });
+      elements.markColor.addEventListener('change', (e) => {
+        state.markColor = e.target.value;
+        renderCurrentSheet();
+      });
+
+      // Náhľad: navigácia, strany, vrstvy, zoom
+      elements.sheetSelect.addEventListener('change', (e) => {
+        state.currentSheetIdx = parseInt(e.target.value, 10) || 0;
+        renderCurrentSheet();
+      });
+      elements.btnPrevSheet.addEventListener('click', () => {
+        if (state.currentSheetIdx > 0) {
+          state.currentSheetIdx--;
+          renderCurrentSheet();
+        }
+      });
+      elements.btnNextSheet.addEventListener('click', () => {
+        state.currentSheetIdx++;
+        renderCurrentSheet();
+      });
+
+      setupSegmentedControl('viewSideSeg', (side) => {
+        state.viewSide = side;
+        renderCurrentSheet();
+      });
+
+      ['layerBoxes', 'layerCells', 'layerNums', 'layerMargin', 'layerMarks'].forEach((id) => {
+        elements[id].addEventListener('change', (e) => {
+          state[id] = e.target.checked;
+          renderCurrentSheet();
+        });
+      });
+
+      elements.btnZoomFit.addEventListener('click', () => {
+        state.zoomMode = 'fit';
+        state.zoomLevel = 1.0;
+        renderCurrentSheet();
+      });
+      elements.btnZoom100.addEventListener('click', () => {
+        state.zoomMode = 'numeric';
+        state.zoomLevel = 1.0;
+        renderCurrentSheet();
+      });
+      elements.btnZoomIn.addEventListener('click', () => {
+        state.zoomMode = 'numeric';
+        state.zoomLevel = Math.min(6.0, state.zoomLevel * 1.25);
+        renderCurrentSheet();
+      });
+      elements.btnZoomOut.addEventListener('click', () => {
+        state.zoomMode = 'numeric';
+        state.zoomLevel = Math.max(0.15, state.zoomLevel / 1.25);
+        renderCurrentSheet();
+      });
+    }
+
+    function updateNupGapInfo() {
+      const bleedMm = ptToMm(getEffectiveBleedPt());
+      const gapX = Math.max(0, state.nupGutterX - 2 * bleedMm);
+      const gapY = Math.max(0, state.nupGutterY - 2 * bleedMm);
+      elements.nupGapInfo.textContent = `Biela medzera medzi spadávkami: ${gapX.toFixed(1)} × ${gapY.toFixed(1)} mm`;
+    }
+
+    function setupSegmentedControl(containerId, onChange) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const btns = container.querySelectorAll('.segmented-btn');
+      btns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          btns.forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          const val = btn.dataset.val || btn.dataset.preset || btn.dataset.side;
+          onChange(val);
+        });
+      });
+    }
+
+    /* --------------------------------------------------------------------------
+       PAN & ZOOM MYŠOU NA NÁHĽADE (DETAILNÁ KONTROLA ROZREZU A ZNAČIEK)
+       -------------------------------------------------------------------------- */
+    function setupCanvasPanZoom() {
+      const vp = elements.canvasViewport;
+      let isDragging = false;
+      let startX = 0, startY = 0;
+      let startScrollL = 0, startScrollT = 0;
+
+      vp.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        isDragging = true;
+        vp.classList.add('grabbing');
+        startX = e.clientX;
+        startY = e.clientY;
+        startScrollL = vp.scrollLeft;
+        startScrollT = vp.scrollTop;
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        vp.classList.remove('grabbing');
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        vp.scrollLeft = startScrollL - (e.clientX - startX);
+        vp.scrollTop = startScrollT - (e.clientY - startY);
+      });
+
+      // Zoom kolieskom myši
+      vp.addEventListener('wheel', (e) => {
+        if (!state.pdfDoc) return;
+        e.preventDefault();
+        if (state.zoomMode === 'fit') {
+          state.zoomMode = 'numeric';
+          state.zoomLevel = 0.8;
+        }
+        if (e.deltaY < 0) {
+          state.zoomLevel = Math.min(6.0, state.zoomLevel * 1.12);
+        } else {
+          state.zoomLevel = Math.max(0.15, state.zoomLevel / 1.12);
+        }
+        renderCurrentSheet();
+      }, { passive: false });
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+
+  <!-- ==========================================================================
+       GOOGLE PRIHLÁSENIE & ZÁZNAM PRÍSTUPOV (PRE GITHUB PAGES + TYPTOP.SK)
+       ========================================================================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+      signOut,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      getDocs
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    /**
+     * KONFIGURÁCIA PRIHLASOVANIA PRE VAŠU SUBDOMÉNU (napr. arch.typtop.sk)
+     * 1. Pre zapnutie na GitHub Pages zmeňte `enabled: true`
+     * 2. Vyplňte svoj e-mail do `adminEmail` (uvidíte tlačidlo „Prehľad prihlásení“)
+     * 3. Vložte hodnoty z vašej bezplatnej konzoly (Firebase projekt -> Web app)
+     */
+    const AUTH_CONFIG = {
+      enabled: false,
+      adminEmail: "vas-email@gmail.com",
+      firebaseConfig: {
+        apiKey: "SEM_VLOZTE_API_KEY",
+        authDomain: "VAS-PROJEKT.firebaseapp.com",
+        projectId: "VAS-PROJEKT",
+        appId: "SEM_VLOZTE_APP_ID"
+      }
+    };
+
+    if (AUTH_CONFIG.enabled) {
+      const gateOverlay = document.getElementById('authGateOverlay');
+      const btnGoogleSignIn = document.getElementById('btnGoogleSignIn');
+      const authErrorMsg = document.getElementById('authErrorMsg');
+      const userBar = document.getElementById('authUserBar');
+      const userText = document.getElementById('authUserText');
+      const btnLogout = document.getElementById('btnLogoutGoogle');
+      const btnOpenAdminLogs = document.getElementById('btnOpenAdminLogs');
+
+      const adminModal = document.getElementById('adminLogModal');
+      const btnCloseAdminLogs = document.getElementById('btnCloseAdminLogs');
+      const btnRefreshLogs = document.getElementById('btnRefreshLogs');
+      const btnExportLogsCsv = document.getElementById('btnExportLogsCsv');
+      const adminLogTableBody = document.getElementById('adminLogTableBody');
+      const adminLogStatus = document.getElementById('adminLogStatus');
+
+      let cachedLogs = [];
+      let loggedVisitForUid = null;
+
+      try {
+        const app = initializeApp(AUTH_CONFIG.firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+
+        // Zobraziť bránu, kým sa neoverí prihlásenie
+        gateOverlay.classList.add('active');
+
+        const showAuthError = (msg) => {
+          authErrorMsg.textContent = msg;
+          authErrorMsg.classList.add('visible');
+        };
+
+        // Zápis návštevy (kto a kedy) do databázy
+        const recordLoginEvent = async (user) => {
+          if (!user || loggedVisitForUid === user.uid) return;
+          loggedVisitForUid = user.uid;
+          try {
+            const now = new Date();
+            await addDoc(collection(db, 'login_logs'), {
+              uid: user.uid,
+              email: user.email || '',
+              displayName: user.displayName || 'Bez mena',
+              timestampMs: now.getTime(),
+              timestampIso: now.toISOString(),
+              host: window.location.hostname
+            });
+          } catch (err) {
+            console.warn('Záznam prihlásenia sa nepodarilo uložiť:', err);
+          }
+        };
+
+        // Načítanie logov pre správcu
+        const loadAdminLogs = async () => {
+          adminLogStatus.textContent = 'Načítavam záznamy prihlásení...';
+          adminLogTableBody.innerHTML = '';
+          try {
+            const snap = await getDocs(collection(db, 'login_logs'));
+            const rows = [];
+            snap.forEach((docSnap) => rows.push(docSnap.data()));
+            rows.sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
+            cachedLogs = rows;
+
+            adminLogStatus.textContent = `Celkový počet zaznamenaných prihlásení: ${rows.length}`;
+            if (!rows.length) {
+              adminLogTableBody.innerHTML = '<tr><td colspan="3" style="color:var(--text-dim);">Zatiaľ žiadne záznamy.</td></tr>';
+              return;
+            }
+
+            rows.slice(0, 200).forEach((r) => {
+              const tr = document.createElement('tr');
+              const dt = r.timestampMs
+                ? new Date(r.timestampMs).toLocaleString('sk-SK')
+                : (r.timestampIso || '-');
+              const tdDate = document.createElement('td');
+              tdDate.className = 'mono';
+              tdDate.textContent = dt;
+              const tdName = document.createElement('td');
+              tdName.textContent = r.displayName || '-';
+              const tdEmail = document.createElement('td');
+              tdEmail.className = 'mono';
+              tdEmail.textContent = r.email || '-';
+              tr.append(tdDate, tdName, tdEmail);
+              adminLogTableBody.appendChild(tr);
+            });
+          } catch (err) {
+            adminLogStatus.textContent = 'Nepodarilo sa načítať záznamy (skontrolujte oprávnenia): ' + err.message;
+          }
+        };
+
+        onAuthStateChanged(auth, async (user) => {
+          if (user) {
+            gateOverlay.classList.remove('active');
+            authErrorMsg.classList.remove('visible');
+            userBar.classList.add('visible');
+            userText.textContent = user.displayName || user.email || 'Prihlásený';
+            document.getElementById('authUserName').title = user.email || '';
+
+            const isAdmin =
+              AUTH_CONFIG.adminEmail &&
+              user.email &&
+              user.email.toLowerCase() === AUTH_CONFIG.adminEmail.toLowerCase();
+            btnOpenAdminLogs.style.display = isAdmin ? 'inline-block' : 'none';
+
+            await recordLoginEvent(user);
+          } else {
+            loggedVisitForUid = null;
+            userBar.classList.remove('visible');
+            adminModal.classList.remove('active');
+            gateOverlay.classList.add('active');
+          }
+        });
+
+        btnGoogleSignIn.addEventListener('click', async () => {
+          authErrorMsg.classList.remove('visible');
+          try {
+            await signInWithPopup(auth, provider);
+          } catch (err) {
+            showAuthError('Prihlásenie zlyhalo: ' + err.message);
+          }
+        });
+
+        btnLogout.addEventListener('click', async () => {
+          try {
+            await signOut(auth);
+            if (window.showToast) window.showToast('Boli ste odhlásený.');
+          } catch (err) {
+            if (window.showToast) window.showToast('Chyba pri odhlásení: ' + err.message, true);
+          }
+        });
+
+        btnOpenAdminLogs.addEventListener('click', () => {
+          adminModal.classList.add('active');
+          loadAdminLogs();
+        });
+        btnCloseAdminLogs.addEventListener('click', () => adminModal.classList.remove('active'));
+        btnRefreshLogs.addEventListener('click', loadAdminLogs);
+
+        btnExportLogsCsv.addEventListener('click', () => {
+          const header = 'Datum a cas;Meno;Email\n';
+          const lines = cachedLogs.map((r) => {
+            const dt = r.timestampMs ? new Date(r.timestampMs).toLocaleString('sk-SK') : '';
+            const safe = (v) => `"${String(v || '').replace(/"/g, '""')}"`;
+            return `${safe(dt)};${safe(r.displayName)};${safe(r.email)}`;
+          });
+          const blob = new Blob(['\uFEFF' + header + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'arch_prihlasenia.csv';
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      } catch (err) {
+        console.error('Chyba inicializácie prihlasovania:', err);
+      }
+    }
+  </script>
+</body>
+</html>
